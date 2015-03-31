@@ -38,17 +38,17 @@
               {{/script.hasGroups}}
               {{#script.homepages}}<p><i class="fa fa-fw fa-home"></i> <b>Homepage:</b> <a href="{{{url}}}"{{#hasNoFollow}} rel="nofollow"{{/hasNoFollow}}>{{text}}</a></p>{{/script.homepages}}
               {{#script.support}}<p><i class="fa fa-fw fa-support"></i> <b>Support:</b> <a href="{{{url}}}"{{#hasNoFollow}} rel="nofollow"{{/hasNoFollow}}>{{text}}</a></p>{{/script.support}}
-              {{#script.copyrights}}<p><i class="fa fa-fw fa-legal"></i> <b>Copyright:</b> {{name}}</p>{{/script.copyrights}}
+              {{#script.copyrights}}<p><i class="fa fa-fw fa-copyright"></i> <b>Copyright:</b> {{name}}</p>{{/script.copyrights}}
               {{#script.licenses}}<p><i class="fa fa-fw fa-legal"></i> <b>License:</b> {{name}}</p>{{/script.licenses}}
               {{#hasCollab}}
               <p><i class="fa fa-fw fa-user"></i> <b>Collaborator:</b> {{#script.collaborators}} <span class="label label-info"><a href="/users/{{{url}}}">{{text}}</a></span> {{/script.collaborators}}</p>
               {{/hasCollab}}
               {{#script.isFork}}
-                <p><b>Fork History:</b></p>
+                <p><i class="octicon octicon-fw octicon-repo-forked"></i> <b>Fork History:</b></p>
                 <ul>
                 {{#script.fork}}
                   <li>
-                    <i class="fa fa-fw fa-fork"></i> <a href="/scripts/{{{url}}">{{url}}</a>
+                    <a href="/{{#script.isLib}}libs{{/script.isLib}}{{^script.isLib}}scripts{{/script.isLib}}/{{{url}}">{{url}}</a>
                   </li>
                 {{/script.fork}}
                 </ul>
@@ -58,13 +58,8 @@
                 <ul>
                 {{#script.libs}}
                   <li>
-                    <span class="script-icon hidden-xs">
-                      {{#icon16Url}}
-                        <img src="{{{icon16Url}}}" alt="">
-                      {{/icon16Url}}
-                      {{^icon16Url}}
-                        <i class="fa fa-fw fa-file-code-o"></i>
-                      {{/icon16Url}}
+                    <span class="page-heading-icon hidden-xs" {{#icon16Url}}data-icon-src="{{{icon16Url}}}"{{/icon16Url}}>
+                     <i class="fa fa-fw fa-file-excel-o"></i>
                     </span>
                     <a href="{{{scriptPageUrl}}}" class="tr-link-a"><b>{{name}}</b></a>{{#meta.version}} <div class="script-version label label-default">{{meta.version}}</div>{{/meta.version}} <span class="inline-block">by <a href="{{{author.userPageUrl}}}">{{author.name}}</span></a>
                   </li>
@@ -88,7 +83,7 @@
             <ul>
             {{#script.usedBy}}
               <li>
-                <span class="script-icon hidden-xs">
+                <span class="page-heading-icon hidden-xs">
                   {{#icon16Url}}
                     <img src="{{{icon16Url}}}" alt="">
                   {{/icon16Url}}
@@ -111,5 +106,6 @@
   </div>
   {{> includes/scriptModals.html }}
   {{> includes/footer.html }}
+  {{> includes/scripts/lazyIconScript.html }}
 </body>
 </html>

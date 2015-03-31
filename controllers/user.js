@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var fs = require('fs');
 var formidable = require('formidable');
 var async = require('async');
@@ -7,18 +13,20 @@ var _ = require('underscore');
 var util = require('util');
 
 var Comment = require('../models/comment').Comment;
-var Flag = require('../models/flag').Flag;
 var Script = require('../models/script').Script;
 var Strategy = require('../models/strategy').Strategy;
 var User = require('../models/user').User;
+var Discussion = require('../models/discussion').Discussion;
+
+var categories = require('../controllers/discussion').categories;
 
 var userRoles = require('../models/userRoles.json');
 var scriptStorage = require('./scriptStorage');
-var RepoManager = require('../libs/repoManager');
 var modelParser = require('../libs/modelParser');
 var modelQuery = require('../libs/modelQuery');
 var flagLib = require('../libs/flag');
 var removeLib = require('../libs/remove');
+var stats = require('../libs/stats');
 var strategies = require('./strategies.json');
 var renderMd = require('../libs/markdown').renderMd;
 var helpers = require('../libs/helpers');
@@ -30,6 +38,8 @@ var countTask = require('../libs/tasks').countTask;
 var settings = require('../models/settings.json');
 var github = require('./../libs/githubClient');
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
+var removeReasons = require('../views/includes/userModals.json').removeReasons;
 
 function caseInsensitive (aStr) {
   return new RegExp('^' + (aStr || '').replace(/([.?*+^$[\]\\(){}|-])/g, "\\$1")
@@ -39,6 +49,12 @@ function caseInsensitive (aStr) {
 var setupUserModerationUITask = function (aOptions) {
   var user = aOptions.user;
   var authedUser = aOptions.authedUser;
+
+  // Default to infinity
+  aOptions.threshold = '\u221E';
+
+  // Default to &ndash;
+  aOptions.flags = '\u2013';
 
   return function (aCallback) {
     var flagUrl = '/flag/users/' + user.name;
@@ -62,10 +78,12 @@ var setupUserModerationUITask = function (aOptions) {
         aOptions.canRemove = aCanRemove;
         aOptions.flags = user.flags || 0;
 
-        if (!aCanRemove) { return aCallback(); }
+        if (!aCanRemove) {
+          return aCallback();
+        }
 
         flagLib.getThreshold(User, user, aAuthor, function (aThreshold) {
-          aOptions.threshold = aThreshold;
+          aOptions.threshold = aThreshold || 0;
           aCallback();
         });
       });
@@ -89,7 +107,6 @@ var getUserPageTasks = function (aOptions) {
 
   // Shortcuts
   var user = aOptions.user;
-  var authedUser = aOptions.authedUser;
 
   //--- Tasks
 
@@ -118,6 +135,14 @@ var setupUserSidePanel = function (aOptions) {
   if (authedUser && authedUser.isMod && (authedUser.role < user.role || aOptions.isYou)) {
     //aOptions.userTools = {}; // TODO: Support moderator edits of user profiles?
     aOptions.modTools = {};
+
+    if (removeReasons) {
+      aOptions.modTools.hasRemoveReasons = true;
+      aOptions.modTools.removeReasons = [];
+      removeReasons.forEach(function (aReason) {
+        aOptions.modTools.removeReasons.push({ 'name' : aReason });
+      });
+    }
   }
 
   // Admin
@@ -164,6 +189,10 @@ exports.userListPage = function (aReq, aRes, aNext) {
   // Page metadata
   pageMetadata(options, 'Users');
 
+  // Order dir
+  orderDir(aReq, options, 'name', 'desc');
+  orderDir(aReq, options, 'role', 'asc');
+
   // userListQuery
   var userListQuery = User.find();
 
@@ -204,9 +233,9 @@ exports.userListPage = function (aReq, aRes, aNext) {
     if (options.isFlagged) {
       pageMetadata(options, ['Flagged Users', 'Moderation']);
     }
-  };
+  }
   function render() { aRes.render('pages/userListPage', options); }
-  function asyncComplete(err) { if (err) { return aNext(); } else { preRender(); render(); } };
+  function asyncComplete(err) { if (err) { return aNext(); } else { preRender(); render(); } }
   async.parallel(tasks, asyncComplete);
 };
 
@@ -214,7 +243,7 @@ exports.userListPage = function (aReq, aRes, aNext) {
 exports.view = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var username = aReq.route.params.username;
+  var username = aReq.params.username;
 
   User.findOne({
     name: caseInsensitive(username)
@@ -251,9 +280,6 @@ exports.view = function (aReq, aRes, aNext) {
     // scriptListQuery: Defaults
     modelQuery.applyScriptListQueryDefaults(scriptListQuery, options, aReq);
 
-    // scriptListQuery: Pagination
-    var pagination = options.pagination; // is set in modelQuery.apply___ListQueryDefaults
-
     //--- Tasks
 
     // UserPage tasks
@@ -262,8 +288,11 @@ exports.view = function (aReq, aRes, aNext) {
     // UserSidePanel tasks
     tasks = tasks.concat(getUserSidePanelTasks(options));
 
+    // Stats tasks
+    tasks = tasks.concat(stats.getSummaryTasks(options));
+
     //---
-    function preRender() { };
+    function preRender() { }
     function render() { aRes.render('pages/userPage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
@@ -273,7 +302,7 @@ exports.view = function (aReq, aRes, aNext) {
 exports.userCommentListPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var username = aReq.route.params.username;
+  var username = aReq.params.username;
 
   User.findOne({
     name: caseInsensitive(username)
@@ -335,19 +364,44 @@ exports.userCommentListPage = function (aReq, aRes, aNext) {
     function preRender() {
       // commentList
       options.commentList = _.map(options.commentList, modelParser.parseComment);
+
+      // comment.author
       _.map(options.commentList, function (aComment) {
         aComment.author = modelParser.parseUser(aComment._authorId);
       });
+
+      // comment.content render
       _.map(options.commentList, modelParser.renderComment);
 
-      // comment.discussion
+      // comment.discussion & comment.category & comment.script
       _.map(options.commentList, function (aComment) {
-        aComment.discussion = modelParser.parseDiscussion(aComment._discussionId);
+        if (aComment._discussionId) {
+          aComment.discussion = modelParser.parseDiscussion(aComment._discussionId);
+
+          var category = _.findWhere(categories, { slug: aComment.discussion.category });
+          if (!category) {
+            category = modelParser.parseCategoryUnknown(aComment.discussion.category);
+          }
+          aComment.category = modelParser.parseCategory(category);
+
+          if (aComment.discussion.issue) {
+            aComment.script = {
+              scriptPageUrl: aComment.category.categoryPageUrl.replace('/issues', ''),
+              name: category.name
+            };
+            category.name = 'Issues';
+          } else {
+            aComment.script = {
+              scriptPageUrl: '/forum',
+              name: 'Forum'
+            };
+          }
+        }
       });
 
       // Pagination
       options.paginationRendered = pagination.renderDefault(aReq);
-    };
+    }
     function render() { aRes.render('pages/userCommentListPage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
@@ -357,7 +411,7 @@ exports.userCommentListPage = function (aReq, aRes, aNext) {
 exports.userScriptListPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var username = aReq.route.params.username;
+  var username = aReq.params.username;
 
   User.findOne({
     name: caseInsensitive(username)
@@ -380,6 +434,12 @@ exports.userScriptListPage = function (aReq, aRes, aNext) {
     // Page metadata
     pageMetadata(options, [user.name, 'Users']);
     options.isUserScriptListPage = true;
+
+    // Order dir
+    orderDir(aReq, options, 'name', 'asc');
+    orderDir(aReq, options, 'install', 'desc');
+    orderDir(aReq, options, 'rating', 'desc');
+    orderDir(aReq, options, 'updated', 'desc');
 
     // scriptListQuery
     var scriptListQuery = Script.find();
@@ -408,6 +468,9 @@ exports.userScriptListPage = function (aReq, aRes, aNext) {
     // UserPage tasks
     tasks = tasks.concat(getUserPageTasks(options));
 
+    // Stats tasks
+    tasks = tasks.concat(stats.getSummaryTasks(options));
+
     //---
     function preRender() {
       // scriptList
@@ -433,7 +496,7 @@ exports.userScriptListPage = function (aReq, aRes, aNext) {
       } else if (options.isUserScriptListPage) {
         options.scriptListIsEmptyMessage = 'This user hasn\'t added any scripts yet.';
       }
-    };
+    }
     function render() { aRes.render('pages/userScriptListPage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
@@ -442,10 +505,6 @@ exports.userScriptListPage = function (aReq, aRes, aNext) {
 
 exports.userEditProfilePage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
-
-  if (!authedUser) { return aRes.redirect('/login'); }
-
-  var username = aReq.route.params.username;
 
   User.findOne({
     _id: authedUser._id
@@ -495,7 +554,7 @@ exports.userEditProfilePage = function (aReq, aRes, aNext) {
     tasks = tasks.concat(getUserSidePanelTasks(options));
 
     //---
-    function preRender() { };
+    function preRender() { }
     function render() { aRes.render('pages/userEditProfilePage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
@@ -504,8 +563,6 @@ exports.userEditProfilePage = function (aReq, aRes, aNext) {
 
 exports.userEditPreferencesPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
-
-  if (!authedUser) { return aRes.redirect('/login'); }
 
   User.findOne({
     _id: authedUser._id
@@ -576,22 +633,20 @@ exports.userEditPreferencesPage = function (aReq, aRes, aNext) {
         });
 
         // Get OpenId strategies
-        if (process.env.NODE_ENV === 'production') {
-          for (name in strategies) {
-            strategy = strategies[name];
+        for (name in strategies) {
+          strategy = strategies[name];
 
-            if (!strategy.oauth && name !== defaultStrategy) {
-              if (userStrats.indexOf(name) > -1) {
-                options.usedStrategies.push({
-                  'strat': name,
-                  'display': strategy.name
-                });
-              } else {
-                options.openStrategies.push({
-                  'strat': name,
-                  'display': strategy.name
-                });
-              }
+          if (!strategy.oauth && name !== defaultStrategy) {
+            if (userStrats.indexOf(name) > -1) {
+              options.usedStrategies.push({
+                'strat': name,
+                'display': strategy.name
+              });
+            } else {
+              options.openStrategies.push({
+                'strat': name,
+                'display': strategy.name
+              });
             }
           }
         }
@@ -609,95 +664,15 @@ exports.userEditPreferencesPage = function (aReq, aRes, aNext) {
     // UserSidePanel tasks
     tasks = tasks.concat(getUserSidePanelTasks(options));
 
-    function preRender() { };
+    function preRender() { }
     function render() { aRes.render('pages/userEditPreferencesPage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
   });
 };
 
-// Let a user edit their account
-exports.edit = function (aReq, aRes, aNext) {
-  var user = aReq.session.user;
-  var userStrats = null;
-  var options = null;
-
-  if (!user) { return aRes.redirect('/login'); }
-
-  userStrats = aReq.session.user.strategies.slice(0);
-  options = {
-    name: user.name,
-    about: user.about,
-    username: user.name
-  };
-
-  // Page metadata
-  pageMetadata(options, ['Edit Yourself', 'Users']);
-
-  aReq.route.params.push('author');
-
-  Strategy.find({}, function (aErr, aStrats) {
-    var defaultStrategy = userStrats[userStrats.length - 1];
-    var strategy = null;
-    var name = null;
-    options.openStrategies = [];
-    options.usedStrategies = [];
-
-    // Get the strategies we have OAuth keys for
-    aStrats.forEach(function (aStrat) {
-      if (aStrat.name === defaultStrategy) { return; }
-
-      if (userStrats.indexOf(aStrat.name) > -1) {
-        options.usedStrategies.push({
-          'strat': aStrat.name,
-          'display': aStrat.display
-        });
-      } else {
-        options.openStrategies.push({
-          'strat': aStrat.name,
-          'display': aStrat.display
-        });
-      }
-    });
-
-    // Get OpenId strategies
-    if (process.env.NODE_ENV === 'production') {
-      for (name in strategies) {
-        strategy = strategies[name];
-
-        if (!strategy.oauth && name !== defaultStrategy) {
-          if (userStrats.indexOf(name) > -1) {
-            options.usedStrategies.push({
-              'strat': name,
-              'display': strategy.name
-            });
-          } else {
-            options.openStrategies.push({
-              'strat': name,
-              'display': strategy.name
-            });
-          }
-        }
-      }
-    }
-
-    options.defaultStrategy = strategies[defaultStrategy].name;
-    options.haveOtherStrategies = options.usedStrategies.length > 0;
-
-    scriptsList.listScripts({ _authorId: user._id, isLib: null, flagged: null }, // TODO: Global detected... may need renaming
-      { size: -1 }, '/user/edit',
-      function (aScriptsList) {
-        aScriptsList.edit = true;
-        options.scriptsList = aScriptsList;
-        aRes.render('userEdit', options);
-      });
-  });
-};
-
 exports.newScriptPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
-
-  if (!authedUser) return aRes.redirect('/login');
 
   //
   var options = {};
@@ -712,6 +687,7 @@ exports.newScriptPage = function (aReq, aRes, aNext) {
   options.newUserJS = true;
   options.newScriptEditorPageUrl = '/user/add/scripts/new';
   options.uploadNewScriptPageUrl = '/user/add/scripts/upload';
+  options.maximumUploadScriptSize = settings.maximum_upload_script_size;
 
   // Page metadata
   pageMetadata(options, 'New Script');
@@ -727,8 +703,6 @@ exports.newScriptPage = function (aReq, aRes, aNext) {
 exports.newLibraryPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  if (!authedUser) return aRes.redirect('/login');
-
   //
   var options = {};
   var tasks = [];
@@ -742,6 +716,7 @@ exports.newLibraryPage = function (aReq, aRes, aNext) {
   options.newJSLibrary = true;
   options.newScriptEditorPageUrl = '/user/add/lib/new';
   options.uploadNewScriptPageUrl = '/user/add/lib/upload';
+  options.maximumUploadScriptSize = settings.maximum_upload_script_size;
 
   // Page metadata
   pageMetadata(options, 'New Library');
@@ -756,8 +731,6 @@ exports.newLibraryPage = function (aReq, aRes, aNext) {
 
 exports.userGitHubRepoListPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
-
-  if (!authedUser) return aRes.redirect('/login');
 
   //
   var options = {};
@@ -846,11 +819,8 @@ exports.userGitHubRepoListPage = function (aReq, aRes, aNext) {
 exports.userGitHubImportScriptPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  if (!authedUser) return aRes.redirect('/login');
-
   //
   var options = {};
-  var tasks = [];
 
   // Session
   authedUser = options.authedUser = modelParser.parseUser(authedUser);
@@ -914,7 +884,7 @@ exports.userGitHubImportScriptPage = function (aReq, aRes, aNext) {
 
       if (options.javascriptBlob.isUserJS) {
         //
-        var userscriptHeaderRegex = /^\/\/ ==UserScript==([\s\S]*?)^\/\/ ==\/UserScript==/m;
+        var userscriptHeaderRegex = /^(?:\uFEFF)?\/\/ ==UserScript==([\s\S]*?)^\/\/ ==\/UserScript==/m;
         var m = userscriptHeaderRegex.exec(aBlobUtf8);
         if (m && m[1]) {
           var userscriptMeta = scriptStorage.parseMeta(m[1], true);
@@ -947,8 +917,6 @@ exports.userGitHubImportScriptPage = function (aReq, aRes, aNext) {
 
 exports.userGitHubRepoPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
-
-  if (!authedUser) return aRes.redirect('/login');
 
   //
   var options = {};
@@ -995,7 +963,7 @@ exports.userGitHubRepoPage = function (aReq, aRes, aNext) {
         options.repo = aRepo;
         options.repoAsEncoded = {
           default_branch: encodeURI(options.repo.default_branch)
-        }
+        };
 
         github.gitdata.getJavascriptBlobs({
           user: encodeURIComponent(aRepo.owner.login),
@@ -1019,7 +987,7 @@ exports.userGitHubRepoPage = function (aReq, aRes, aNext) {
 
         aCallback(null);
       },
-    ], aCallback)
+    ], aCallback);
   });
 
   //---
@@ -1069,140 +1037,13 @@ var parseJavascriptBlob = function (aJavascriptBlob) {
   return aJavascriptBlob;
 };
 
-// Sloppy code to let a user add scripts to their acount
-exports.userManageGitHubPage = function (aReq, aRes, aNext) {
-  var authedUser = aReq.session.user;
-
-  if (!authedUser) return aRes.redirect('/login');
-
-  //
-  var options = {};
-  var tasks = [];
-
-  // Session
-  authedUser = options.authedUser = modelParser.parseUser(authedUser);
-  options.isMod = authedUser && authedUser.isMod;
-  options.isAdmin = authedUser && authedUser.isAdmin;
-
-  // Page metadata
-  pageMetadata(options, ['Manage', 'GitHub']);
-
-  //
-  var TOO_MANY_SCRIPTS = 'GitHub user has too many scripts to batch import.';
-  tasks.push(function (aCallback) {
-    var githubUserName = aReq.query.user || authedUser.ghUsername;
-
-    async.waterfall([
-      // authedUser.ghUsername
-      function (aCallback) {
-        if (githubUserName || authedUser.ghUsername) {
-          aCallback(null);
-        } else {
-          async.waterfall([
-            function (aCallback) {
-              var githubUserId = authedUser.githubUserId();
-              github.user.getFrom({
-                user: encodeURIComponent(githubUserId)
-              }, aCallback);
-            },
-            function (aGithubUser, aCallback) {
-              options.githubUser = aGithubUser;
-              console.log(githubUser);
-              User.findOne({
-                _id: authedUser._id
-              }, aCallback);
-            },
-            function (aUserData, aCallback) {
-              console.log(aUserData);
-              aUserData.ghUsername = options.githubUser.login;
-              aUserData.save(aCallback);
-            },
-            function (aCallback) {
-              console.log(util.format('Updated User(%s).ghUsername', aUserData.name));
-              aCallback(null);
-            },
-          ], aCallback);
-        }
-      },
-      // Fetch repos and format for template.
-      function (aCallback) {
-        console.log(githubUserName);
-        var repoManager = RepoManager.getManager(githubUserName, authedUser);
-        repoManager.fetchRecentRepos(function () {
-          // convert the repos object to something mustache can use
-          options.repos = repoManager.makeRepoArray();
-
-          var repos = repoManager.repos;
-          aCallback(null, repos);
-        });
-      },
-      // Import repos.
-      function (aRepos, aCallback) {
-        var loadable = {};
-        var scriptname = null;
-
-        console.log(aReq.body);
-        _.each(aReq.body, function (aRepo, aReponame) {
-          // Load all scripts in the repo
-          if (typeof aRepo === 'string' && reponame.substr(-4) === '_all') {
-            aReponame = aRepo;
-            aRepo = aRepos[aReponame];
-
-            if (aRepo) {
-              for (scriptname in aRepo) {
-                if (!loadable[aReponame]) { loadable[aReponame] = nil(); }
-                loadable[aReponame][scriptname] = aRepo[scriptname];
-              }
-            }
-          } else if (typeof aRepo === 'object') { // load individual scripts
-            for (scriptname in aRepo) {
-              if (aRepos[aReponame][scriptname]) {
-                if (!loadable[aReponame]) { loadable[aReponame] = nil(); }
-                loadable[aReponame][scriptname] = aRepos[aReponame][scriptname];
-              }
-            }
-          }
-        });
-
-        // Load the scripts onto the site
-        if (_.size(loadable) > 0) {
-          console.log('loadScripts');
-          var githubUserName = authedUser.ghUsername;
-          RepoManager.getManager(githubUserName, authedUser, loadable).loadScripts(function () {
-            console.log('preredirect');
-            aRes.redirect(authedUser.userScriptListPageUrl);
-            console.log('redirect');
-            aCallback(null);
-          });
-        } else {
-          aCallback(null);
-        }
-      },
-    ], aCallback);
-  });
-
-
-  //---
-  async.parallel(tasks, function (aErr) {
-    if (aErr) {
-      return statusCodePage(aReq, aRes, aNext, {
-        statusMessage: aErr
-      })
-    }
-
-    console.log('render');
-    aRes.render('pages/userManageGitHub', options);
-  });
-};
-
 exports.uploadScript = function (aReq, aRes, aNext) {
-  var user = aReq.session.user;
-  var isLib = aReq.route.params.isLib;
+  var authedUser = aReq.session.user;
+  var isLib = aReq.params.isLib;
   var userjsRegex = /\.user\.js$/;
   var jsRegex = /\.js$/;
   var form = null;
 
-  if (!user) { return aRes.redirect('/login'); }
   if (!/multipart\/form-data/.test(aReq.headers['content-type'])) {
     return aNext();
   }
@@ -1215,16 +1056,16 @@ exports.uploadScript = function (aReq, aRes, aNext) {
     var failUrl = '/user/add/' + (isLib ? 'lib' : 'scripts');
 
     // Reject non-js and huge files
-    if (script.type !== 'application/javascript' &&
+    if (script.type !== 'application/javascript' ||
       script.size > settings.maximum_upload_script_size) {
       return aRes.redirect(failUrl);
     }
 
     stream = fs.createReadStream(script.path);
-    stream.on('data', function (aD) { bufs.push(aD); }); // TODO: Non-descript function parm
+    stream.on('data', function (aData) { bufs.push(aData); });
 
     stream.on('end', function () {
-      User.findOne({ _id: user._id }, function (aErr, aUser) {
+      User.findOne({ _id: authedUser._id }, function (aErr, aUser) {
         var scriptName = aFields.script_name;
         if (isLib) {
           scriptStorage.storeScript(aUser, scriptName, Buffer.concat(bufs),
@@ -1252,22 +1093,20 @@ exports.uploadScript = function (aReq, aRes, aNext) {
 
 // post route to update a user's account
 exports.update = function (aReq, aRes, aNext) {
-  var user = aReq.session.user;
+  var authedUser = aReq.session.user;
   var scriptUrls = aReq.body.urls ? Object.keys(aReq.body.urls) : '';
   var installRegex = null;
   var installNames = [];
-  var username = user.name.toLowerCase();
-
-  if (!user) { return aRes.redirect('/login'); }
+  var username = authedUser.name.toLowerCase();
 
   if (typeof aReq.body.about !== 'undefined') {
     // Update the about section of a user's profile
-    User.findOneAndUpdate({ _id: user._id },
+    User.findOneAndUpdate({ _id: authedUser._id },
       { about: aReq.body.about },
       function (aErr, aUser) {
         if (aErr) { aRes.redirect('/'); }
 
-        aReq.session.user.about = aUser.about; // TODO: Ambiguous
+        authedUser.about = aUser.about;
         aRes.redirect('/users/' + aUser.name);
       });
   } else {
@@ -1278,25 +1117,23 @@ exports.update = function (aReq, aRes, aNext) {
       if (matches && matches[1]) { installNames.push(matches[1]); }
     });
     async.each(installNames, scriptStorage.deleteScript, function () {
-      aRes.redirect('/users/' + user.name);
+      aRes.redirect('/users/' + authedUser.name);
     });
   }
 };
 
 // Submit a script through the web editor
 exports.submitSource = function (aReq, aRes, aNext) {
-  var user = aReq.session.user;
-  var isLib = aReq.route.params.isLib;
+  var authedUser = aReq.session.user;
+  var isLib = aReq.params.isLib;
   var source = null;
   var url = null;
-
-  if (!user) { return aRes.redirect('/login'); }
 
   function storeScript(aMeta, aSource) {
     var userjsRegex = /\.user\.js$/;
     var jsRegex = /\.js$/;
 
-    User.findOne({ _id: user._id }, function (aErr, aUser) {
+    User.findOne({ _id: authedUser._id }, function (aErr, aUser) {
       scriptStorage.storeScript(aUser, aMeta, aSource, function (aScript) {
         var redirectUrl = encodeURI(aScript ? (aScript.isLib ? '/libs/'
           + aScript.installName.replace(jsRegex, '') : '/scripts/'
@@ -1340,9 +1177,9 @@ exports.submitSource = function (aReq, aRes, aNext) {
 };
 
 function getExistingScript(aReq, aOptions, aAuthedUser, aCallback) {
-  aOptions.isLib = aReq.route.params.isLib;
+  aOptions.isLib = aReq.params.isLib;
 
-  if (!aReq.route.params.scriptname) {
+  if (aReq.params.isNew) {
 
     // A user who isn't logged in can't write a new script
     if (!aAuthedUser) { return aCallback(null); }
@@ -1358,7 +1195,7 @@ function getExistingScript(aReq, aOptions, aAuthedUser, aCallback) {
 
     aCallback(aOptions);
   } else {
-    aReq.route.params.scriptname += aOptions.isLib ? '.js' : '.user.js';
+    aReq.params.scriptname += aOptions.isLib ? '.js' : '.user.js';
     scriptStorage.getSource(aReq, function (aScript, aStream) {
       var bufs = [];
       var collaborators = [];
@@ -1373,7 +1210,7 @@ function getExistingScript(aReq, aOptions, aAuthedUser, aCallback) {
         }
       }
 
-      aStream.on('data', function (aD) { bufs.push(aD); }); // TODO: Non-descript function parm
+      aStream.on('data', function (aData) { bufs.push(aData); });
       aStream.on('end', function () {
         // Page metadata
         pageMetadata(aOptions, 'Edit ' + aScript.name);
@@ -1395,18 +1232,24 @@ function getExistingScript(aReq, aOptions, aAuthedUser, aCallback) {
 }
 
 exports.editScript = function (aReq, aRes, aNext) {
+
   var authedUser = aReq.session.user;
+
+  var isNew = aReq.params.isNew;
+  var isLib = aReq.params.isLib;
 
   //
   var options = {};
   var tasks = [];
 
+  var installNameSlug = null;
+  var scriptAuthor = null;
+  var scriptNameSlug = null;
+
   // Session
   authedUser = options.authedUser = modelParser.parseUser(authedUser);
   options.isMod = authedUser && authedUser.role < 4;
-
-  // Page metadata
-  pageMetadata(options);
+  options.isAdmin = authedUser && authedUser.role < 3;
 
   //--- Tasks
 
@@ -1419,24 +1262,65 @@ exports.editScript = function (aReq, aRes, aNext) {
     });
   });
 
-  //---
-  async.parallel(tasks, function (aErr) {
-    if (aErr) return aNext();
+  if (!isNew) {
+    installNameSlug = scriptStorage.getInstallName(aReq);
+    scriptAuthor = aReq.params.username;
+    scriptNameSlug = aReq.params.scriptname;
 
-    aRes.render('pages/scriptViewSourcePage', options);
-  });
+    Script.findOne({
+      installName: scriptStorage
+        .caseInsensitive(installNameSlug + (isLib ? '.js' : '.user.js'))
+    }, function (aErr, aScriptData) {
+      //---
+      if (aErr || !aScriptData) { return aNext(); }
+
+      // Script
+      var script = options.script = modelParser.parseScript(aScriptData);
+      options.isOwner = authedUser && authedUser._id == script._authorId;
+      modelParser.renderScript(script);
+      script.installNameSlug = installNameSlug;
+      script.scriptPermalinkInstallPageUrl = 'https://' + aReq.get('host') +
+        script.scriptInstallPageUrl;
+
+      // Page metadata
+      pageMetadata(options);
+
+      options.isScriptViewSourcePage = true;
+
+      //--- Tasks
+
+      // Show the number of open issues
+      var scriptOpenIssueCountQuery = Discussion.find({ category: scriptStorage
+          .caseInsensitive(script.issuesCategorySlug), open: {$ne: false} });
+      tasks.push(countTask(scriptOpenIssueCountQuery, options, 'issueCount'));
+
+      //---
+      async.parallel(tasks, function (aErr) {
+        if (aErr) return aNext();
+
+        aRes.render('pages/scriptViewSourcePage', options);
+      });
+    });
+  } else {
+    //---
+    async.parallel(tasks, function (aErr) {
+      if (aErr) return aNext();
+
+      aRes.render('pages/scriptViewSourcePage', options);
+    });
+  }
 };
 
 // route to flag a user
 exports.flag = function (aReq, aRes, aNext) {
-  var username = aReq.route.params.username;
-  var unflag = aReq.route.params.unflag;
+  var username = aReq.params.username;
+  var unflag = aReq.params.unflag;
 
   User.findOne({ name: username }, function (aErr, aUser) {
     var fn = flagLib[unflag && unflag === 'unflag' ? 'unflag' : 'flag'];
     if (aErr || !aUser) { return aNext(); }
 
-    fn(User, aUser, aReq.session.user, function (aFlagged) { // TODO: Non-descript function name
+    fn(User, aUser, aReq.session.user, function (aFlagged) { // NOTE: Inline function here
       aRes.redirect('/users/' + username);
     });
   });

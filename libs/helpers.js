@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var url = require("url");
 var _ = require('underscore');
 
@@ -53,7 +59,7 @@ exports.formatDate = function (aDate) {
   }
 
   return ret;
-}
+};
 
 // Create an object with no properties
 exports.nil = function (aObj) {
@@ -90,8 +96,11 @@ exports.cleanFilename = function (aFilename, aDefaultName) {
   return cleanName || aDefaultName;
 };
 
-exports.limitRange = function (aMin, aX, aMax) {
-  return Math.max(Math.min(aX, aMax), aMin);
+exports.limitRange = function (aMin, aX, aMax, aDefault) {
+  var x = Math.max(Math.min(aX, aMax), aMin);
+
+  // ES5 strict similar check to ES6 Number.isNaN()
+  return (x !== x ? aDefault : x);
 };
 
 exports.limitMin = function (aMin, aX) {

@@ -15,9 +15,16 @@
             <div class="container-fluid comments">
               <div class="row">
                 <section class="topic-area list-group">
+                  {{#paginationRendered}}
+                  <div class="text-center collapse">
+                    {{{paginationRendered}}}
+                  </div>
+                  {{/paginationRendered}}
                   {{#commentList}}
                   <div class="topic-title row container-fluid">
                     <ol class="breadcrumb pull-left">
+                      <li><a href="{{{script.scriptPageUrl}}}">{{script.name}}</a></li>
+                      <li><a href="{{{category.categoryPageUrl}}}">{{category.name}}</a></li>
                       <li class="active"><a href="{{{discussion.discussionPageUrl}}}">{{discussion.topic}}</a></li>
                     </ol>
                   </div>
@@ -31,9 +38,11 @@
                     </div>
                   </div>
                   {{/commentList}}
+                  {{#paginationRendered}}
                   <div class="text-center">
                     {{{paginationRendered}}}
                   </div>
+                  {{/paginationRendered}}
                 </section>
               </div>
             </div>
@@ -46,5 +55,8 @@
     </div>
   </div>
   {{> includes/footer.html }}
+  {{#paginationRendered}}
+    {{> includes/scripts/showTopPagination.html }}
+  {{/paginationRendered}}
 </body>
 </html>

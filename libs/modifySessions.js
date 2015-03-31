@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 // This library allows for the modifications of user sessions
 var async = require('async');
 
@@ -98,7 +104,7 @@ exports.destroy = function (aReq, aUser, aCallback) {
     }
   };
 
-  if (!aUser || !aUser.sessionIds) { return aCb('No sessions', null); }
+  if (!aUser || !aUser.sessionIds) { return aCallback('No sessions', null); }
 
   async.each(aUser.sessionIds, function (aId, aCb) {
     store.set(aId, emptySess, aCb);

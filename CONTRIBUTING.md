@@ -8,10 +8,10 @@ This project uses [editor config](http://editorconfig.org/), please make sure to
 #### Prerequisites
 
 * [Git](http://git-scm.com/)
-* [node.js 0.10.x](http://nodejs.org/)
+* [node.js 0.10.33 or other newer stable release](http://nodejs.org/)
 * [MongoDB](http://www.mongodb.org/) (Optional.  The project is preconfigured to use a dev DB on [MongoLab](https://mongolab.com/).)
 * [Ruby](https://www.ruby-lang.org/) (required to run [FakeS3](https://github.com/jubos/fake-s3/))
-* [FakeS3](https://github.com/jubos/fake-s3) (required to store libraries/scripts without [AWS S3](http://aws.amazon.com/s3/))
+* [FakeS3](https://github.com/jubos/fake-s3) (required to store libraries/scripts without [AWS S3](http://aws.amazon.com/s3/)) handled by [bundler](https://github.com/bundler/bundler)
 
 #### GitHub Fork Setup
 
@@ -29,12 +29,12 @@ This project uses [editor config](http://editorconfig.org/), please make sure to
 #### Installation
 
 1. Follow the forking instructions above to get a local copy of the project, or simply retrieve the code [as a ZIP](https://github.com/OpenUserJs/OpenUserJS.org/archive/master.zip) and extract it somewhere.
-2. Navigate to the project directory and run `npm install` to install the dependencies defined within [package.json](https://github.com/OpenUserJs/OpenUserJS.org/blob/master/package.json)
-3. If not already installed, install Ruby:
+2. If not already installed, install Ruby:
   * **Linux:** Run `sudo apt-get install ruby` (or similar for your package manager)
   * **Mac:** Use [Homebrew](http://brew.sh/) and [RubyGems](https://rubygems.org/)
   * **Windows:**  Use [RubyInstaller](http://rubyinstaller.org/)
-4. If not already installed, install FakeS3 by running `gem install fakes3`
+3. If not already installed, install bundler by running `sudo gem install bundler`
+4. Navigate to the project directory and run `npm install` to install the dependencies defined within [package.json](https://github.com/OpenUserJs/OpenUserJS.org/blob/master/package.json) and [Gemfile](https://github.com/OpenUserJs/OpenUserJS.org/blob/master/Gemfile)
 
 #### Configuration
 
@@ -72,6 +72,7 @@ To contribute code to OpenUserJS.org the following process should generally be u
 7. Click the "Edit" button and ensure the "base fork" branch is `master` (or desired target branch upstream) and the "head fork" branch is `issue-NUM`.
 8. Click the "Create pull request" button and enter a descriptive title and comment, referencing the original issue number.
 9. Click the "Create pull request" button to submit your pull request.
+10. When one person submits a pull request, someone else with privileges should merge it when a consensus has been reached. Please allow appropriate time for evaluation from others. The only exception is the active maintainer *(because some stuff just needs to get done without waiting for input)*
 
 #### Usage of Labels
 
@@ -104,6 +105,9 @@ After an Assignee takes an Issue with announcement there may need to be further 
 
 ##### needs testing
 Anyone can add this but it is primarily there for the Assignee indicating that Testers are wanted and needed.
+
+##### needs mitigation
+Bascially this means following up with a preferable related enhancement issue and/or pull request. Removal of this can only occur by the hierarchy of Establishing Owner &rarr; Owner &rarr; Active Maintainer and then remaining Collaboratorion teams...and of course whoever initially put it on. In the event of a conflict of two same team categories the label is to stay on until a member of the higher up team can mediate. This can be used when someone in development feels something is or is not related and should be readdressed to reduce the perceived friction during voting/discussion process. This is usually non-blocking.
 
 ##### feature
 Something we don't already have implemented to the best of your knowledge but would like to see.
@@ -169,7 +173,7 @@ This can be a little tricky and needs some improvement for the docs.
 
 * Find the `.../OpenUserJS.org/.git/config` and edit it. It should look a little something like this:
 
-```
+``` apacheconf
 [core]
   repositoryformatversion = 0
   filemode = true
@@ -188,7 +192,7 @@ This can be a little tricky and needs some improvement for the docs.
 
 * and change it to add the following line of `fetch = +refs/pull/*/head:refs/remotes/upstream/pr/*` so it ends up looking a little like this:
 
-```
+``` apacheconf
 [core]
   repositoryformatversion = 0
   filemode = true
@@ -220,10 +224,45 @@ $ git prune upstream
 ```
 
 
-**NOTE** Sometimes `$ git-gui` will not properly craft the necessary url to checkout a specific pull request so it will be necessary to use the terminal in this case.
+**NOTE**: Sometimes `$ git-gui` will not properly craft the necessary url to checkout a specific pull request so it will be necessary to use the terminal in this case.
 
+### Compiling
+
+#### node.js
+There are multiple ways to retrieve this however this appears to work best for most cases. Please ensure that you have the proper dependencies installed first depending on the version selected and your distribution:
+
+``` sh-session
+$ git clone git://github.com/joyent/node.git
+$ cd node
+$ git checkout origin/v0.10.33-release
+$ ./configure --prefix=/usr
+$ make
+$ sudo make install
+```
+
+Think you may have messed up with installation or compiling then use these commands to clean up:
+
+``` sh-session
+$ sudo make uninstall
+$ make clean
+```
+... **NOTE**: You can always rerun the above `./configure` command when necessary too.
+
+Checking your installation is a snap by by:
+
+``` sh-session
+$ node -v
+$ npm -v
+```
+It is highly recommended to update to the latest npm by using npm itself to update itself with:
+
+``` sh-session
+$ sudo npm install npm -g
+```
 
 See Also
 --------
 
 * [STYLEGUIDE.md](STYLEGUIDE.md)
+* [Privacy-Policy.md](views/includes/documents/Privacy-Policy.md)
+* [Terms-of-Service.md](views/includes/documents/Terms-of-Service.md)

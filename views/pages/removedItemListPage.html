@@ -12,12 +12,19 @@
         <h2 class="page-heading">
           Removed Items
         </h2>
+        {{#paginationRendered}}
+        <div class="text-center collapse">
+          {{{paginationRendered}}}
+        </div>
+        {{/paginationRendered}}
         <div class="panel panel-default">
           {{> includes/removedItemList.html }}
         </div>
+        {{#paginationRendered}}
         <div class="text-center">
           {{{paginationRendered}}}
         </div>
+        {{/paginationRendered}}
       </div>
       <div class="col-sm-4">
         {{> includes/searchBarPanel.html }}
@@ -25,11 +32,15 @@
         <div class="list-group">
           <a href="?q=Script" class="list-group-item">Scripts</a>
           <a href="?q=User" class="list-group-item">Users</a>
+          <a href="?q=" class="list-group-item">All Types</a>
         </div>
       </div>
     </div>
   </div>
   {{> includes/footer.html }}
   {{> includes/scripts/tableTrLinkScript.html }}
+  {{#paginationRendered}}
+    {{> includes/scripts/showTopPagination.html }}
+  {{/paginationRendered}}
 </body>
 </html>

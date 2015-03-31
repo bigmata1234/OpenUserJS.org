@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var countTask = require('../libs/tasks').countTask;
 var helpers = require('../libs/helpers');
 var modelParser = require('../libs/modelParser');
@@ -15,24 +21,33 @@ var paginateTemplate = function (aOpts) {
   var distVisible = aOpts.distVisible || 4;
   var firstVisible = aOpts.firstVisible || true;
   var lastVisible = aOpts.firstVisible || true;
+  var soleVisible = aOpts.soleVisible || false;
+
+  if (!soleVisible && lastPage === 1) {
+    return null;
+  }
 
   var linkedPages = [];
 
   for (var i = Math.max(1, currentPage - distVisible); i <= Math.min(currentPage + distVisible, lastPage); i++)
     linkedPages.push(i);
 
-  if (firstVisible && linkedPages.length > 0 && linkedPages[0] != 1)
+  if (firstVisible && linkedPages.length > 0 && linkedPages[0] !== 1)
     linkedPages.splice(0, 0, 1); // insert the value 1 at index 0
 
-  if (lastVisible && linkedPages.length > 0 && linkedPages[linkedPages.length - 1] != lastPage)
+  if (lastVisible && linkedPages.length > 0 && linkedPages[linkedPages.length - 1] !== lastPage)
     linkedPages.push(lastPage);
+
+  if (linkedPages.length === 0) {
+    return null;
+  }
 
   var html = '';
   html += '<ul class="pagination">';
   for (var i = 0; i < linkedPages.length; i++) {
     var linkedPage = linkedPages[i];
     html += '<li';
-    if (linkedPage == currentPage)
+    if (linkedPage === currentPage)
       html += ' class="active"';
     html += '>';
     html += '<a href="';
@@ -74,7 +89,9 @@ var newPagination = function (aCurrentPage, aItemsPerPage) {
 
   //
   pagination.currentPage = aCurrentPage ? helpers.limitMin(1, aCurrentPage) : 1;
-  pagination.itemsPerPage = aItemsPerPage ? helpers.limitRange(1, aItemsPerPage, maxItemsPerPage) : defaultItemsPerPage;
+  pagination.itemsPerPage = aItemsPerPage ?
+    helpers.limitRange(1, aItemsPerPage, maxItemsPerPage, defaultItemsPerPage) :
+    defaultItemsPerPage;
 
   return pagination;
 };
@@ -84,8 +101,8 @@ var getDefaultPagination = function (aReq) {
   var pagination = newPagination(aReq.query.p, aReq.query.limit);
   pagination.renderDefault = function (aReq) {
     pagination.lastPage = Math.ceil(pagination.numItems / pagination.itemsPerPage) || 1;
-    pagination.urlFn = function (aP) { // TODO: Non-descript function parm
-      return helpers.setUrlQueryValue(aReq.url, 'p', aP);
+    pagination.urlFn = function (aPage) {
+      return helpers.setUrlQueryValue(aReq.url, 'p', aPage);
     };
     return pagination.render();
   };
@@ -120,15 +137,30 @@ function pageMetadata(aOptions, aTitle, aDescription, aKeywords) {
   } else if (_.isArray(aTitle)) {
     titles = aTitle.concat(titles);
   }
-  aOptions.aTitle = titles.join(' | ');
+  aOptions.title = titles.join(' | ');
 
   aOptions.pageMetaDescription = 'Download userscripts to enhance your browser.';
   if (typeof (aDescription) !== "undefined" && aDescription !== null) {
     aOptions.pageMetaDescription = aDescription;
   }
 
-  var pageMetaKeywords = ['userscript', 'userscripts', 'javascript', 'Greasemonkey', 'Scriptish',
-    'Tampermonkey', 'extension', 'browser'];
+  var pageMetaKeywords = [
+    'userscript',
+    'userscripts',
+    'user script',
+    'user scripts',
+    'user.js',
+    'repository',
+    'Greasemonkey',
+    'Greasemonkey Port',
+    'Scriptish',
+    'TamperMonkey',
+    'Violent monkey',
+    'JavaScript',
+    'add-ons',
+    'extensions',
+    'browser'
+  ];
   if (typeof (aKeywords) !== "undefined" && aKeywords !== null && _.isArray(aKeywords)) {
     pageMetaKeywords = _.union(pageMetaKeywords, aKeywords);
   }
@@ -136,3 +168,16 @@ function pageMetadata(aOptions, aTitle, aDescription, aKeywords) {
   aOptions.pageMetaKeywords = pageMetaKeywords.join(', ');
 }
 exports.pageMetadata = pageMetadata;
+
+// Switch order direction.
+function orderDir(aReq, aOptions, aOrderBy, aOrderDirDefault) {
+  var orderDirReverse = null;
+
+  aOrderDirDefault = aOrderDirDefault || 'desc';
+  orderDirReverse = (aOrderDirDefault === 'desc') ? 'asc' : 'desc';
+  if (typeof (aOptions.orderDir) === 'undefined') {
+    aOptions.orderDir = {};
+  }
+  aOptions.orderDir[aOrderBy] = aReq.query.orderDir === aOrderDirDefault ? orderDirReverse : aOrderDirDefault;
+}
+exports.orderDir = orderDir;

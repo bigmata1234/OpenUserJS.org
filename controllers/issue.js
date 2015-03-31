@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var async = require('async');
 var _ = require('underscore');
 
@@ -13,16 +19,18 @@ var scriptStorage = require('./scriptStorage');
 var discussionLib = require('./discussion');
 var execQueryTask = require('../libs/tasks').execQueryTask;
 var countTask = require('../libs/tasks').countTask;
+var statusCodePage = require('../libs/templateHelpers').statusCodePage;
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
 
 // List script issues
 exports.list = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var type = aReq.route.params.type;
-  var username = aReq.route.params.username;
-  var scriptname = aReq.route.params.scriptname;
-  var open = aReq.route.params.open !== 'closed';
+  var type = aReq.params.type;
+  var username = aReq.params.username;
+  var scriptname = aReq.params.scriptname;
+  var open = aReq.params.open !== 'closed';
 
   var installNameSlug = username + '/' + scriptname;
 
@@ -65,6 +73,12 @@ exports.list = function (aReq, aRes, aNext) {
       category.description);
     options.isScriptIssuesPage = true;
 
+    // Order dir
+    orderDir(aReq, options, 'topic', 'asc');
+    orderDir(aReq, options, 'comments', 'desc');
+    orderDir(aReq, options, 'created', 'desc');
+    orderDir(aReq, options, 'updated', 'desc');
+
     // discussionListQuery
     var discussionListQuery = Discussion.find();
 
@@ -104,7 +118,22 @@ exports.list = function (aReq, aRes, aNext) {
 
       // Pagination
       options.paginationRendered = pagination.renderDefault(aReq);
-    };
+
+      // Empty list
+      if (options.searchBarValue) {
+        if (open) {
+          options.discussionListIsEmptyMessage = 'We couldn\'t find any open discussions with this search value.';
+        } else {
+          options.discussionListIsEmptyMessage = 'We couldn\'t find any closed discussions with this search value.';
+        }
+      } else {
+        if (open) {
+          options.discussionListIsEmptyMessage = 'No open discussions.';
+        } else {
+          options.discussionListIsEmptyMessage = 'No closed discussions.';
+        }
+      }
+    }
     function render() { aRes.render('pages/scriptIssueListPage', options); }
     function asyncComplete() { preRender(); render(); }
     async.parallel(tasks, asyncComplete);
@@ -115,16 +144,16 @@ exports.list = function (aReq, aRes, aNext) {
 exports.view = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var type = aReq.route.params.type;
-  var username = aReq.route.params.username;
-  var scriptname = aReq.route.params.scriptname;
-  var topic = aReq.route.params.topic;
+  var type = aReq.params.type;
+  var username = aReq.params.username;
+  var scriptname = aReq.params.scriptname;
+  var topic = aReq.params.topic;
 
   var installNameSlug = username + '/' + scriptname;
 
   Script.findOne({
     installName: scriptStorage.caseInsensitive(
-      installNameSlug  + (type === 'libs' ? '.js' : '.user.js'))
+      installNameSlug + (type === 'libs' ? '.js' : '.user.js'))
   }, function (aErr, aScriptData) {
     if (aErr || !aScriptData) { return aNext(); }
 
@@ -200,7 +229,7 @@ exports.view = function (aReq, aRes, aNext) {
 
         // Pagination
         options.paginationRendered = pagination.renderDefault(aReq);
-      };
+      }
       function render() { aRes.render('pages/scriptIssuePage', options); }
       function asyncComplete() { preRender(); render(); }
       async.parallel(tasks, asyncComplete);
@@ -212,22 +241,20 @@ exports.view = function (aReq, aRes, aNext) {
 exports.open = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  if (!authedUser) return aRes.redirect('/login');
-
   var topic = aReq.body['discussion-topic'];
   var content = aReq.body['comment-content'];
 
-  var type = aReq.route.params.type;
+  var type = aReq.params.type;
   var installNameSlug = scriptStorage.getInstallName(aReq);
 
   Script.findOne({
     installName: scriptStorage.caseInsensitive(
-      installNameSlug  + (type === 'libs' ? '.js' : '.user.js'))
+      installNameSlug + (type === 'libs' ? '.js' : '.user.js'))
   }, function (aErr, aScriptData) {
     function preRender() {
       // Page metadata
       pageMetadata(options, ['New Issue', script.name]);
-    };
+    }
     function render() { aRes.render('pages/scriptNewIssuePage', options); }
     function asyncComplete() { preRender(); render(); }
 
@@ -258,6 +285,14 @@ exports.open = function (aReq, aRes, aNext) {
     options.category = category;
 
     if (topic && content) {
+      if (!topic.trim() || !content.trim()) {
+        return statusCodePage(aReq, aRes, aNext, {
+          statusCode: 403,
+          statusMessage: 'You cannot post an empty issue topic to this ' +
+            (type === 'libs' ? 'library' : 'script')
+        });
+      }
+
       // Issue Submission
       discussionLib.postTopic(authedUser, category.slug, topic, content, true,
         function (aDiscussion) {
@@ -281,24 +316,33 @@ exports.open = function (aReq, aRes, aNext) {
 
 // post route to add a new comment to a discussion on an issue
 exports.comment = function (aReq, aRes, aNext) {
-  var type = aReq.route.params.type;
-  var topic = aReq.route.params.topic;
+  var type = aReq.params.type;
+  var topic = aReq.params.topic;
   var installName = scriptStorage.getInstallName(aReq);
   var category = type + '/' + installName + '/issues';
-  var user = aReq.session.user;
-
-  if (!user) { return aRes.redirect('/login'); }
+  var authedUser = aReq.session.user;
 
   Script.findOne({ installName: scriptStorage.caseInsensitive(installName
     + (type === 'libs' ? '.js' : '.user.js')) }, function (aErr, aScript) {
-      var content = aReq.body['comment-content'];
+    var content = aReq.body['comment-content'];
 
-    if (aErr || !aScript) { return aNext(); }
+    if (aErr || !aScript) {
+      return aNext();
+    }
+
+    if (!content || !content.trim()) {
+      return statusCodePage(aReq, aRes, aNext, {
+        statusCode: 403,
+        statusMessage: 'You cannot post an empty comment to this issue'
+      });
+    }
 
     discussionLib.findDiscussion(category, topic, function (aIssue) {
-      if (!aIssue) { return aNext(); }
+      if (!aIssue) {
+        return aNext();
+      }
 
-      discussionLib.postComment(user, aIssue, content, false,
+      discussionLib.postComment(authedUser, aIssue, content, false,
         function (aErr, aDiscussion) {
           aRes.redirect(encodeURI(aDiscussion.path
             + (aDiscussion.duplicateId ? '_' + aDiscussion.duplicateId : '')));
@@ -309,15 +353,13 @@ exports.comment = function (aReq, aRes, aNext) {
 
 // Open or close and issue you are allowed
 exports.changeStatus = function (aReq, aRes, aNext) {
-  var type = aReq.route.params.type;
-  var topic = aReq.route.params.topic;
+  var type = aReq.params.type;
+  var topic = aReq.params.topic;
   var installName = scriptStorage.getInstallName(aReq);
   var category = type + '/' + installName + '/issues';
-  var action = aReq.route.params.action;
-  var user = aReq.session.user;
+  var action = aReq.params.action;
+  var authedUser = aReq.session.user;
   var changed = false;
-
-  if (!user) { return aRes.redirect('/login'); }
 
   Script.findOne({ installName: scriptStorage.caseInsensitive(installName
     + (type === 'libs' ? '.js' : '.user.js')) }, function (aErr, aScript) {
@@ -330,11 +372,11 @@ exports.changeStatus = function (aReq, aRes, aNext) {
       // Both the script author and the issue creator can close the issue
       // Only the script author can reopen a closed issue
       if (action === 'close' && aIssue.open
-      && (user.name === aIssue.author || user.name === aScript.author)) {
+      && (authedUser.name === aIssue.author || authedUser.name === aScript.author)) {
         aIssue.open = false;
         changed = true;
       } else if (action === 'reopen' && !aIssue.open
-        && user.name === aScript.author) {
+        && authedUser.name === aScript.author) {
         aIssue.open = true;
         changed = true;
       }

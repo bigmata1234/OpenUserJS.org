@@ -1,12 +1,16 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var https = require('https');
 var async = require('async');
-var util = require('util');
 var _ = require('underscore');
 
 var Strategy = require('../models/strategy').Strategy;
-var User = require('../models/user').User;
 
 var nil = require('./helpers').nil;
 var github = require('../libs/githubClient');
@@ -32,9 +36,9 @@ function fetchRaw(aHost, aPath, aCallback) {
   var req = https.request(options,
     function (aRes) {
       var bufs = [];
-      if (aRes.statusCode != 200) { console.log(aRes.statusCode); return aCallback([new Buffer('')]); }
+      if (aRes.statusCode !== 200) { console.log(aRes.statusCode); return aCallback([new Buffer('')]); }
       else {
-        aRes.on('data', function (aD) { bufs.push(aD); }); // TODO: Non-descript function parm
+        aRes.on('data', function (aData) { bufs.push(aData); });
         aRes.on('end', function () {
           aCallback(bufs);
         });
@@ -96,7 +100,6 @@ RepoManager.prototype.loadScripts = function (aCallback, aUpdate) {
   var scriptStorage = require('../controllers/scriptStorage');
   var arrayOfRepos = this.makeRepoArray();
   var that = this;
-  var scripts = [];
 
   // TODO: remove usage of makeRepoArray since it causes redundant looping
   arrayOfRepos.forEach(function (aRepo) {
@@ -113,7 +116,7 @@ RepoManager.prototype.loadScripts = function (aCallback, aUpdate) {
       });
     }, aCallback);
   });
-}
+};
 
 // Create the Mustache object to display repos with their user scrips
 RepoManager.prototype.makeRepoArray = function () {
@@ -138,7 +141,7 @@ RepoManager.prototype.makeRepoArray = function () {
   }
 
   return retOptions;
-}
+};
 
 // Manages a single repo
 function Repo(aManager, aUsername, aReponame) {
@@ -155,7 +158,6 @@ Repo.prototype.fetchUserScripts = function (aCallback) {
 // Looks for user script in the current directory
 // and initiates searches on subdirectories
 Repo.prototype.parseTree = function (aTree, aPath, aDone) {
-  var object;
   var trees = [];
   var that = this;
   var repos = this.manager.repos;

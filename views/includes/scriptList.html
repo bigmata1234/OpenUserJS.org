@@ -1,23 +1,18 @@
 <table class="table table-hover">
   <thead>
     <tr>
-      <th class="text-center"><a href="?orderBy=name&orderDir=asc">Name</a></th>
-      <th class="text-center td-fit"><a href="?orderBy=installs&orderDir=desc">Installs</a></th>
-      <th class="text-center td-fit"><a href="?orderBy=rating&orderDir=desc">Rating</a></th>
-      <th class="text-center td-fit"><a href="?orderBy=updated&orderDir=desc">Last Updated</a></th>
+      <th class="text-center"><a href="?orderBy=name&orderDir={{orderDir.name}}{{#librariesOnly}}&library=true{{/librariesOnly}}{{#isFlagged}}&flagged=true{{/isFlagged}}">Name</a></th>
+      {{^librariesOnly}}<th class="text-center td-fit"><a href="?orderBy=installs&orderDir={{orderDir.install}}{{#isFlagged}}&flagged=true{{/isFlagged}}">Installs</a></th>{{/librariesOnly}}
+      <th class="text-center td-fit"><a href="?orderBy=rating&orderDir={{orderDir.rating}}{{#librariesOnly}}&library=true{{/librariesOnly}}{{#isFlagged}}&flagged=true{{/isFlagged}}">Rating</a></th>
+      <th class="text-center td-fit"><a href="?orderBy=updated&orderDir={{orderDir.updated}}{{#librariesOnly}}&library=true{{/librariesOnly}}{{#isFlagged}}&flagged=true{{/isFlagged}}">Last Updated</a></th>
     </tr>
   </thead>
   <tbody>
     {{#scriptList}}
     <tr class="tr-link">
       <td>
-        <span class="script-icon hidden-xs">
-          {{#icon16Url}}
-          <img src="{{{icon16Url}}}" alt="{{! Leave me empty! }}" width="16" height="16" />
-          {{/icon16Url}}
-          {{^icon16Url}}
-          <i class="fa fa-fw fa-file-code-o"></i>
-          {{/icon16Url}}
+        <span class="script-icon hidden-xs" {{#icon16Url}}data-icon-src="{{{icon16Url}}}" data-icon-size="16"{{/icon16Url}}>
+          {{#isLib}}<i class="fa fa-fw fa-file-excel-o"></i>{{/isLib}}{{^isLib}}<i class="fa fa-fw fa-file-code-o"></i>{{/isLib}}
         </span>
         <a href="{{{scriptPageUrl}}}" class="tr-link-a"><b>{{name}}</b></a>
         {{#meta.version}}
@@ -26,9 +21,11 @@
         <span class="inline-block">by <a href="{{{author.userPageUrl}}}">{{author.name}}</a></span>
         <p>{{meta.description}}</p>
       </td>
+      {{^librariesOnly}}
       <td class="text-center td-fit">
-        <p>{{installs}}</p>
+        <p>{{#isLib}}&ndash;{{/isLib}}{{^isLib}}{{installs}}{{/isLib}}</p>
       </td>
+      {{/librariesOnly}}
       <td class="rating text-center td-fit">
         <p>{{rating}}</p>
         <div class="progress">

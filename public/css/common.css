@@ -3,10 +3,7 @@ html, body {
 }
 
 @media (max-width: 767px) {
-  span.visible-xs {
-    display: inline !important;
-  }
-  ul.nav > li > a > span.visible-xs + i.fa {
+  ul.nav > li > a > span.visible-xs-inline + i.fa {
     float: right;
     line-height: 20px;
   }
@@ -88,10 +85,6 @@ a.disabled, a[disabled] {
   color: #666;
 }*/
 
-body > .container-fluid > .row > .container-fluid.col-sm-8 {
-  margin-bottom: 100px;
-}
-
 h2.page-heading {
   margin-top: 0;
 }
@@ -119,7 +112,7 @@ h2.page-heading {
   white-space: nowrap;
 }
 
-.td-fit span.label {
+.td-fit span.label, .td-fit p {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 32em;
@@ -130,15 +123,10 @@ h2.page-heading {
   transition: height 0.4s ease;
   width: 100%;
   z-index: 1039;
-  height: 0;
   background-color: #ebebeb;
   bottom: 0;
   font-size: 14px;
   position: fixed;
-}
-
-#reply-control .md-editor {
-  height: 300px;
 }
 
 .md-editor {
@@ -262,6 +250,18 @@ h6:hover a.anchor {
   margin-top: 0;
 }
 
+.user-data code,
+.user-content code,
+.document-content code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.user-data img,
+.user-content img,
+.document-content img {
+  max-width: 100%;
+}
+
 .table-responsive {
   overflow-x: auto;
 }
@@ -273,4 +273,21 @@ th > a {
 
 .inline-block {
   display: inline-block;
+}
+
+a.panel-heading {
+  display: block;
+}
+
+.navbar-static-top .navbar-collapse {
+  max-height: initial;
+}
+
+.octicon {
+  font-size: inherit;
+}
+
+.octicon-fw {
+  text-align: center;
+  width: 1.28571429em;
 }

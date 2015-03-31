@@ -1,0 +1,36 @@
+<script type="text/javascript">
+  (function () {
+
+    var events = 'focus resize scroll';
+    var handler = null;
+    var didCallback = false;
+
+    function callback(aEl) {
+      if (!didCallback) {
+        didCallback = true;
+
+        setTimeout(function () {
+          $('.reminders .alert .close').each(function () {
+            this.click();
+          });
+        }, 7000);
+      }
+    }
+
+    {{> includes/scripts/isElementInViewport.js }}
+
+    function fireIfElementVisible(aEl, aCallback) {
+      return function () {
+        if (isElementInViewport(aEl)) {
+          $(window).off(events, handler);
+
+          aCallback(aEl);
+        }
+      }
+    }
+
+    handler = fireIfElementVisible($('.reminders'), callback);
+    $(window).on(events, handler);
+
+  })();
+</script>

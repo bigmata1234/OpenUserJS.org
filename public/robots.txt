@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /mod/
+Disallow: /flag/
+Disallow: /vote/
+Disallow: /auth/
+Disallow: /github/
+Disallow: /css/
+Disallow: /dist/
+Disallow: /fonts/
+Disallow: /js/
+Disallow: /redist/

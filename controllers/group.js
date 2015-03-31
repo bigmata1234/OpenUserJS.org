@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var async = require('async');
 var _ = require('underscore');
 
@@ -12,6 +18,7 @@ var cleanFilename = require('../libs/helpers').cleanFilename;
 var getRating = require('../libs/collectiveRating').getRating;
 var execQueryTask = require('../libs/tasks').execQueryTask;
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
 
 // clean the name of the group so it is url safe
 function cleanGroupName(aName) {
@@ -23,8 +30,8 @@ function cleanGroupName(aName) {
 exports.search = function (aReq, aRes) {
   var queryStr = '';
   var queryRegex = null;
-  var addTerm = aReq.route.params.addTerm;
-  var term = cleanGroupName(aReq.route.params.term);
+  var addTerm = aReq.params.addTerm;
+  var term = cleanGroupName(aReq.params.term);
   var terms = term.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, '\\$1').split(/\s+/);
   var results = null;
 
@@ -59,7 +66,7 @@ exports.addScriptToGroups = function (aScript, aGroupNames, aCallback) {
     return aScript.save(aCallback);
   }
 
-  Group.find({ name: { $in: aGroupNames } }, function (aErr, aGroups) { // TODO: STYLEGUIDE.md conformance needed here
+  Group.find({ name: { $in: aGroupNames } }, function (aErr, aGroups) {
     var existingGroups = null;
     var existingNames = null;
     var newGroup = null;
@@ -113,12 +120,13 @@ exports.addScriptToGroups = function (aScript, aGroupNames, aCallback) {
     async.parallel(tasks, function () {
       aScript.save(aCallback);
 
-      // Update the group ratings in the background
+      // Update the groups in the background
       aGroups.forEach(function (aGroup) {
-        Script.find({ _id: { $in: aGroup._scriptIds } }, // TODO: STYLEGUIDE.md conformance needed here
+        Script.find({ _id: { $in: aGroup._scriptIds } },
           function (aErr, aScripts) {
             if (aErr || aScripts.length < 2) { return; }
 
+            aGroup.size = aScripts.length;
             aGroup.rating = getRating(aScripts);
             aGroup.updated = new Date();
             aGroup.save(function () { });
@@ -152,7 +160,7 @@ exports.list = function (aReq, aRes) {
     if (options.groupList) {
       pageMetadata(options, 'Groups', null, _.pluck(options.groupList, 'name'));
     }
-  };
+  }
   function render() { aRes.render('pages/groupListPage', options); }
   function asyncComplete() { preRender(); render(); }
 
@@ -163,6 +171,11 @@ exports.list = function (aReq, aRes) {
 
   // Page metadata
   pageMetadata(options, 'Groups');
+
+  // Order dir
+  orderDir(aReq, options, 'name', 'asc');
+  orderDir(aReq, options, 'size', 'desc');
+  orderDir(aReq, options, 'rating', 'desc');
 
   // groupListQuery
   var groupListQuery = Group.find();  // TODO: STYLEGUIDE.md conformance needed here
@@ -176,7 +189,7 @@ exports.list = function (aReq, aRes) {
   // popularGroupListQuery
   var popularGroupListQuery = Group.find();
   popularGroupListQuery
-    .sort('-rating')
+    .sort('-size')
     .limit(25);
 
   //--- Tasks
@@ -196,7 +209,6 @@ exports.list = function (aReq, aRes) {
 
 var setupGroupSidePanel = function (aOptions) {
   // Shortcuts
-  var group = aOptions.group;
   var authedUser = aOptions.authedUser;
 
   // Mod
@@ -214,7 +226,7 @@ var setupGroupSidePanel = function (aOptions) {
 exports.view = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var groupNameSlug = aReq.route.params.groupname;
+  var groupNameSlug = aReq.params.groupname;
   var groupName = groupNameSlug.replace(/_+/g, ' ');
 
   Group.findOne({
@@ -257,7 +269,7 @@ exports.view = function (aReq, aRes, aNext) {
       } else if (options.isUserScriptListPage) {
         options.scriptListIsEmptyMessage = 'This user hasn\'t added any scripts yet.';
       }
-    };
+    }
     function render() { aRes.render('pages/groupScriptListPage', options); }
     function asyncComplete() { preRender(); render(); }
 
@@ -269,6 +281,12 @@ exports.view = function (aReq, aRes, aNext) {
     // Page metadata
     var group = options.group = modelParser.parseGroup(aGroupData);
     pageMetadata(options, [group.name, 'Groups']);
+
+    // Order dir
+    orderDir(aReq, options, 'name', 'asc');
+    orderDir(aReq, options, 'install', 'desc');
+    orderDir(aReq, options, 'rating', 'desc');
+    orderDir(aReq, options, 'updated', 'desc');
 
     // scriptListQuery
     var scriptListQuery = Script.find();
@@ -288,7 +306,7 @@ exports.view = function (aReq, aRes, aNext) {
     // popularGroupListQuery
     var popularGroupListQuery = Group.find();
     popularGroupListQuery
-      .sort('-rating')
+      .sort('-size')
       .limit(25);
 
     // SideBar

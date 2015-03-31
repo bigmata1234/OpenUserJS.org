@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var AWS = require('aws-sdk');
 
 var Script = require('../models/script').Script;
@@ -11,7 +17,7 @@ var userRoles = require('../models/userRoles.json');
 
 var bucketName = 'OpenUserJS.org';
 
-if (process.env.NODE_ENV === 'production') {
+if (isPro) {
   AWS.config.update({ region: 'us-east-1' });
 } else {
   // You need to install (and ruby too): https://github.com/jubos/fake-s3
@@ -27,60 +33,12 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-/*Script.find({ installName: /^[^\/]+\/[^\/]+\/[^\/]+$/ },function (aErr, aScripts){
-  var s3 = new AWS.S3();
-  var Discussion = require('../models/discussion').Discussion;
-
-  aScripts.forEach(function (aScript) {
-    //console.log(aScript.installName);
-    var oldPath = aScript.installName;
-    var newPath = cleanFilename(aScript.author) + '/'
-      + cleanFilename(aScript.name) + (aScript.isLib ? '.js' : '.user.js');
-    var newCat = (aScript.isLib ? 'libs' : 'scripts') + '/' + newPath
-      .replace(/(\.user)?\.js$/, '')  + '/issues';
-    var oldCat = (aScript.isLib ? 'libs' : 'scripts') + '/' + oldPath
-      .replace(/(\.user)?\.js$/, '')  + '/issues';
-
-    Discussion.find({ category: oldCat }, function (aErr, aDiscussions) {
-      aDiscussions.forEach(function (aDiscussion) {
-        var urlTopic = cleanFilename(aDiscussion.topic, '').replace(/_\d+$/, '');
-        var path = '/' + newCat + '/' + urlTopic;
-        aDiscussion.path = path;
-        aDiscussion.category = newCat;
-        aDiscussion.save(function (){ console.log(newCat, path); });
-      });
-    });
-
-    var params = {
-      Bucket: bucketName,
-      CopySource: bucketName + '/' + oldPath,
-      Key: newPath
-    };
-
-    aScript.installName = newPath;
-    s3.copyObject(params, function (aErr, aData) {
-      if (aErr) { return console.log(oldPath + ' - copy fail'); }
-      aScript.save(function () {});
-
-      s3.deleteObject({ Bucket : params.Bucket, Key : oldPath},
-        function (aErr, aData) {
-          if (aErr) {
-            console.log(oldPath + '- delete fail');
-          } else {
-            console.log(newPath + ' - success');
-          }
-        });
-    });
-  });
-});*/
-
-
-function getInstallName (aReq) {
-  return aReq.route.params.username + '/' + aReq.route.params.scriptname;
+function getInstallName(aReq) {
+  return aReq.params.username + '/' + aReq.params.scriptname;
 }
 exports.getInstallName = getInstallName;
 
-function caseInsensitive (aInstallName) {
+function caseInsensitive(aInstallName) {
   return new RegExp('^' + aInstallName.replace(/([.?*+^$[\]\\(){}|-])/g, "\\$1")
     + '$', 'i');
 }
@@ -92,18 +50,28 @@ exports.getSource = function (aReq, aCallback) {
 
   Script.findOne({ installName: caseInsensitive(installName) },
     function (aErr, aScript) {
+      var s3Object = null;
 
-      if (!aScript) { return aCallback(null); }
+      if (!aScript) {
+        return aCallback(null);
+      }
+
+      s3Object = s3.getObject({ Bucket: bucketName, Key: installName }).createReadStream().
+        on('error', function () {
+          if (isPro) {
+            console.error('S3 Key Not Found ' + installName);
+          }
+
+          return aCallback(null);
+        });
 
       // Get the script
-      aCallback(aScript, s3.getObject({ Bucket: bucketName, Key: installName })
-        .createReadStream());
-  });
+      aCallback(aScript, s3Object);
+    });
 };
 
 exports.sendScript = function (aReq, aRes, aNext) {
   var accept = aReq.headers.accept;
-  var installName = null;
 
   if (0 !== aReq.url.indexOf('/libs/') && accept === 'text/x-userscript-meta') {
     return exports.sendMeta(aReq, aRes, aNext);
@@ -115,13 +83,19 @@ exports.sendScript = function (aReq, aRes, aNext) {
 
     // Send the script
     aRes.set('Content-Type', 'text/javascript; charset=UTF-8');
+
+    // Disable *express-minify* for this response
+    aRes._skip = true;
+
     aStream.pipe(aRes);
 
     // Don't count installs on raw source route
-    if (aScript.isLib || aReq.route.params.type) { return; }
+    if (aScript.isLib || aReq.params.type) { return; }
 
     // Update the install count
     ++aScript.installs;
+    ++aScript.installsSinceUpdate;
+
     aScript.save(function (aErr, aScript) { });
   });
 };
@@ -141,6 +115,10 @@ exports.sendMeta = function (aReq, aRes, aNext) {
       if (!aScript) { return aNext(); }
 
       aRes.set('Content-Type', 'text/javascript; charset=UTF-8');
+
+      // Disable *express-minify* for this response
+      aRes._skip = true;
+
       meta = aScript.meta; // NOTE: Watchpoint
 
       aRes.write('// ==UserScript==\n');
@@ -272,12 +250,12 @@ exports.getMeta = function (aChunks, aCallback) {
   // get the user script header.
   var str = '';
   var i = 0;
-  var len = aChunks.length;
+  var header = null;
 
   for (; i < aChunks.length; ++i) {
-    var header = null;
+    header = null;
     str += aChunks[i];
-    header = /^\/\/ ==UserScript==([\s\S]*?)^\/\/ ==\/UserScript==/m.exec(str);
+    header = /^(?:\uFEFF)?\/\/ ==UserScript==([\s\S]*?)^\/\/ ==\/UserScript==/m.exec(str);
 
     if (header && header[1]) { return aCallback(parseMeta(header[1], true)); }
   }
@@ -292,11 +270,12 @@ exports.storeScript = function (aUser, aMeta, aBuf, aCallback, aUpdate) {
   var isLibrary = typeof aMeta === 'string';
   var libraries = [];
   var requires = null;
+  var match = null;
   var collaborators = null;
-  var libraryRegex = new RegExp('^https?:\/\/' +
-    (process.env.NODE_ENV === 'production' ?
-      'openuserjs\.org' : 'localhost:8080') +
-    '\/(?:libs\/src|src\/libs)\/(.+?\/.+?\.js)$', '');
+  var rLibrary = new RegExp(
+    '^(?:(?:(?:https?:)?\/\/' +
+      (isPro ? 'openuserjs\.org' : 'localhost:8080') +
+        ')?\/(?:libs\/src|src\/libs)\/)?(.*?)([^\/]*\.js)$', '');
 
   if (!aMeta) { return aCallback(null); }
 
@@ -329,8 +308,16 @@ exports.storeScript = function (aUser, aMeta, aBuf, aCallback, aUpdate) {
       }
 
       requires.forEach(function (aRequire) {
-        var match = libraryRegex.exec(aRequire);
-        if (match && match[1]) { libraries.push(match[1]); }
+        match = rLibrary.exec(aRequire);
+        if (match) {
+          if (!match[1]) {
+            match[1] = aUser.name + '/';
+          }
+
+          if (!/\.user\.js$/.test(match[2])) {
+            libraries.push(match[1] + match[2]);
+          }
+        }
       });
     }
   } else {
@@ -346,6 +333,7 @@ exports.storeScript = function (aUser, aMeta, aBuf, aCallback, aUpdate) {
       if (aRemoved || (!aScript && (aUpdate || collaborators))) {
         return aCallback(null);
       } else if (!aScript) {
+        // New script
         aScript = new Script({
           name: isLibrary ? aMeta : aMeta.name,
           author: aUser.name,
@@ -363,16 +351,18 @@ exports.storeScript = function (aUser, aMeta, aBuf, aCallback, aUpdate) {
           _authorId: aUser._id
         });
       } else {
+        // Script already exists.
         if (!aScript.isLib) {
           if (collaborators && (aScript.meta.oujs && aScript.meta.oujs.author != aMeta.oujs.author
               || (aScript.meta.oujs && JSON.stringify(aScript.meta.oujs.collaborator) !=
-             JSON.stringify(meta.oujs.collaborator)))) {
+             JSON.stringify(aMeta.oujs.collaborator)))) {
             return aCallback(null);
           }
           aScript.meta = aMeta;
           aScript.uses = libraries;
         }
         aScript.updated = new Date();
+        aScript.installsSinceUpdate = 0;
       }
 
       aScript.save(function (aErr, aScript) {

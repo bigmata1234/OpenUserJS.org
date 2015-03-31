@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var async = require('async');
 var _ = require('underscore');
 
@@ -10,15 +16,15 @@ var modelQuery = require('../libs/modelQuery');
 var execQueryTask = require('../libs/tasks').execQueryTask;
 var statusCodePage = require('../libs/templateHelpers').statusCodePage;
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
 
 exports.removedItemPage = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var removedItemId = aReq.route.params.id;
+  var removedItemId = aReq.params.id;
 
   //
   var options = {};
-  var tasks = [];
 
   // Session
   authedUser = options.authedUser = modelParser.parseUser(authedUser);
@@ -62,6 +68,11 @@ exports.removedItemListPage = function (aReq, aRes, aNext) {
 
   // Page metadata
   pageMetadata(options, 'Graveyard');
+
+  // Order dir
+  orderDir(aReq, options, 'model', 'asc');
+  orderDir(aReq, options, 'removerName', 'asc');
+  orderDir(aReq, options, 'removed', 'desc');
 
   // removedItemListQuery
   var removedItemListQuery = Remove.find();

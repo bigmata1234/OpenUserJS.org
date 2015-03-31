@@ -19,22 +19,29 @@
           <div class="input-group pull-left col-sm-1">
           </div>
           <a class="btn btn-sm btn-success pull-right" href="{{{category.categoryPostDiscussionPageUrl}}}" id="create-topic">
-            <i class="fa fa-plus"></i> New Issue
+            <i class="fa fa-fw fa-plus"></i> New Issue
           </a>
         </div>
         {{#script.hasSupport}}
-        <div class="alert alert-success alert-dismissible" role="alert">
+        <div class="alert alert-success alert-dismissible small" role="alert">
           <button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
           {{#script.support}}<p><i class="fa fa-fw fa-support"></i> <b>Support:</b> <a href="{{{url}}}"{{#hasNoFollow}} rel="nofollow"{{/hasNoFollow}}>{{text}}</a></p>{{/script.support}}
           The script author requests that you use their preferred primary support method when filing an issue. Please consider using that for regular issues.
         </div>
         {{/script.hasSupport}}
+        {{#paginationRendered}}
+        <div class="text-center collapse">
+          {{{paginationRendered}}}
+        </div>
+        {{/paginationRendered}}
         <div class="panel panel-default">
           {{> includes/discussionList.html }}
         </div>
+        {{#paginationRendered}}
         <div class="text-center">
           {{{paginationRendered}}}
         </div>
+        {{/paginationRendered}}
       </div>
       <div class="container-fluid col-sm-4">
         {{> includes/searchBarPanel.html }}
@@ -51,5 +58,9 @@
   </div>
   {{> includes/footer.html }}
   {{> includes/scripts/tableTrLinkScript.html }}
+  {{#paginationRendered}}
+    {{> includes/scripts/showTopPagination.html }}
+  {{/paginationRendered}}
+  {{> includes/scripts/lazyIconScript.html }}
 </body>
 </html>

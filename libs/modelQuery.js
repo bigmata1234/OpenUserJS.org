@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var _ = require('underscore');
 
 var getDefaultPagination = require('../libs/templateHelpers').getDefaultPagination;
@@ -21,8 +27,9 @@ exports.findOrDefaultIfNull = findOrDefaultIfNull;
 var orderDirs = ['asc', 'desc'];
 var parseModelListSort = function (aModelListQuery, aOrderBy, aOrderDir, aDefaultSortFn) {
   if (aOrderBy) {
-    if (_.isUndefined(aOrderDir) || !_.contains(orderDirs, aOrderDir))
+    if (_.isUndefined(aOrderDir) || !_.contains(orderDirs, aOrderDir)) {
       aOrderDir = 'asc';
+    }
 
     if (_.has(aModelListQuery.model.schema.paths, aOrderBy)) {
       var sortBy = {};
@@ -35,7 +42,7 @@ var parseModelListSort = function (aModelListQuery, aOrderBy, aOrderDir, aDefaul
 };
 exports.parseModelListSort = parseModelListSort;
 
-var parseSearchConditions = function (aQ, aPrefixSearchFields, aFullSearchFields) { // NOTE: This code is duplicated elsewhere but this is primary
+var parseSearchConditions = function (aQ, aPrefixSearchFields, aFullSearchFields) {
   var conditions = [];
   var query = null;
   var prefixStr = '';
@@ -89,7 +96,7 @@ var parseScriptSearchQuery = function (aScriptListQuery, aQuery) {
 exports.parseScriptSearchQuery = parseScriptSearchQuery;
 
 var parseGroupSearchQuery = function (aGroupListQuery, aQuery) {
-  parseModelListSearchQuery(aGroupListQuery, query, {
+  parseModelListSearchQuery(aGroupListQuery, aQuery, {
     partialWordMatchFields: ['name'],
     fullWordMatchFields: [],
   });
@@ -97,7 +104,7 @@ var parseGroupSearchQuery = function (aGroupListQuery, aQuery) {
 exports.parseGroupSearchQuery = parseGroupSearchQuery;
 
 var parseDiscussionSearchQuery = function (aDiscussionListQuery, aQuery) {
-  parseModelListSearchQuery(aDiscussionListQuery, query, {
+  parseModelListSearchQuery(aDiscussionListQuery, aQuery, {
     partialWordMatchFields: ['topic'],
     fullWordMatchFields: ['author'],
   });
@@ -128,20 +135,36 @@ var parseRemovedItemSearchQuery = function (aRemovedItemListQuery, aQuery) {
 };
 exports.parseCommentSearchQuery = parseCommentSearchQuery;
 
+exports.applyDiscussionCategoryFilter = function (aDiscussionListQuery, aOptions, aCatergorySlug) {
+  if (aCatergorySlug === 'all') {
+    return;
+  }
+  if (aCatergorySlug === 'issues') {
+    aDiscussionListQuery.find({ issue: true });
+  } else {
+    aDiscussionListQuery.find({ category: aCatergorySlug });
+  }
+};
+
 var applyModelListQueryFlaggedFilter = function (aModelListQuery, aOptions, aFlaggedQuery) {
   // Only list flagged items if authedUser >= moderator or if authedUser owns the item.
   if (aOptions.isYou || aOptions.isMod) {
     // Mod
     if (aFlaggedQuery) {
-      if (aFlaggedQuery == 'true') {
+      if (aFlaggedQuery === 'true') {
         aOptions.isFlagged = true;
+        aOptions.searchBarPlaceholder = aOptions.searchBarPlaceholder.replace(/^Search /, 'Search Flagged ');
+        if (!_.findWhere(aOptions.searchBarFormHiddenVariables, { name: 'flagged' })) {
+          aOptions.searchBarFormHiddenVariables.push({ name: 'flagged', value: 'true' });
+        }
         aModelListQuery.and({ flags: { $gt: 0 } });
-      } else if (aFlaggedQuery == false) {
-        // aModelListQuery.and({$or: [
-        //   {flags: {$exists: false}},
-        //   {flags: {$lte: 0} },
-        // ]});
       }
+    } else {
+      // Remove `flagged` form variable if present
+      aOptions.searchBarFormHiddenVariables = _.without(
+        aOptions.searchBarFormHiddenVariables,
+        _.findWhere(aOptions.searchBarFormHiddenVariables, { name: 'flagged', value: 'true' })
+      );
     }
   } else {
     // Hide
@@ -157,16 +180,18 @@ var applyModelListQueryDefaults = function (aModelListQuery, aOptions, aReq, aDe
   if (aReq.query.q) {
     aOptions.searchBarValue = aReq.query.q;
 
-    if (aDefaultOptions.parseSearchQueryFn)
+    if (aDefaultOptions.parseSearchQueryFn) {
       aDefaultOptions.parseSearchQueryFn(aModelListQuery, aReq.query.q);
+    }
   }
   aOptions.searchBarFormAction = aDefaultOptions.searchBarFormAction || '';
   aOptions.searchBarPlaceholder = aDefaultOptions.searchBarPlaceholder || 'Search';
   aOptions.searchBarFormHiddenVariables = aDefaultOptions.searchBarFormHiddenVariables || [];
 
   // flagged
-  if (aDefaultOptions.filterFlaggedItems)
+  if (aDefaultOptions.filterFlaggedItems) {
     applyModelListQueryFlaggedFilter(aModelListQuery, aOptions, aReq.query.flagged);
+  }
 
   // Sort
   parseModelListSort(aModelListQuery, aReq.query.orderBy, aReq.query.orderDir, function () {
@@ -231,7 +256,7 @@ var libraryListQueryDefaults = {
   searchBarPlaceholder: 'Search Libraries',
   searchBarFormAction: '/',
   searchBarFormHiddenVariables: [
-    { name: 'library', value: 'true' },
+    { name: 'library', value: 'true' }
   ],
   filterFlaggedItems: true
 };

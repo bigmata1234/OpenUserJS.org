@@ -1,7 +1,14 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var async = require('async');
 var _ = require('underscore');
+var url = require('url');
 
 var Discussion = require('../models/discussion').Discussion;
 var Group = require('../models/group').Group;
@@ -16,6 +23,7 @@ var modelQuery = require('../libs/modelQuery');
 var execQueryTask = require('../libs/tasks').execQueryTask;
 var removeSession = require('../libs/modifySessions').remove;
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
 
 // The home page has scripts and groups in a sidebar
 exports.home = function (aReq, aRes) {
@@ -30,6 +38,12 @@ exports.home = function (aReq, aRes) {
 
   // Page metadata
   pageMetadata(options, options.librariesOnly ? 'Libraries' : '');
+
+  // Order dir
+  orderDir(aReq, options, 'name', 'asc');
+  orderDir(aReq, options, 'install', 'desc');
+  orderDir(aReq, options, 'rating', 'desc');
+  orderDir(aReq, options, 'updated', 'desc');
 
   // Session
   authedUser = options.authedUser = modelParser.parseUser(authedUser);
@@ -57,7 +71,7 @@ exports.home = function (aReq, aRes) {
   // popularGroupListQuery
   var popularGroupListQuery = Group.find();
   popularGroupListQuery
-    .sort('-rating')
+    .sort('-size')
     .limit(25);
 
   // Announcements
@@ -132,23 +146,41 @@ exports.home = function (aReq, aRes) {
         pageMetadata(options, ['Flagged Scripts', 'Moderation']);
       }
     }
-  };
+  }
   function render() { aRes.render('pages/scriptListPage', options); }
   function asyncComplete() { preRender(); render(); }
   async.parallel(tasks, asyncComplete);
 };
 
+// Get the referer url for redirect after login/logout
+function getRedirect(aReq) {
+  var referer = aReq.get('Referer');
+  var redirect = '/';
+
+  if (referer) {
+    referer = url.parse(referer);
+    if (referer.hostname === aReq.hostname) {
+      redirect = referer.path;
+    }
+  }
+
+  return redirect;
+}
+
 // UI for user registration
 exports.register = function (aReq, aRes) {
   var authedUser = aReq.session.user;
 
-  // If already logged in, goto the front page.
-  if (authedUser)
-    return aRes.redirect('/');
+  // If already logged in, go back.
+  if (authedUser) {
+    return aRes.redirect(getRedirect(aReq));
+  }
 
   //
   var options = {};
   var tasks = [];
+
+  options.redirectTo = getRedirect(aReq);
 
   // Page metadata
   pageMetadata(options, 'Login / Register');
@@ -161,6 +193,7 @@ exports.register = function (aReq, aRes) {
   //
   options.wantname = aReq.session.username;
   delete aReq.session.username;
+  delete aReq.session.newstrategy;
 
   //
   options.strategies = [];
@@ -204,7 +237,7 @@ exports.register = function (aReq, aRes) {
     var githubStrategy = _.findWhere(options.strategies, { strat: 'github' });
     if (githubStrategy)
       githubStrategy.selected = true;
-  };
+  }
   function render() { aRes.render('pages/loginPage', options); }
   function asyncComplete() { preRender(); render(); }
   async.parallel(tasks, asyncComplete);
@@ -212,12 +245,13 @@ exports.register = function (aReq, aRes) {
 
 exports.logout = function (aReq, aRes) {
   var authedUser = aReq.session.user;
+  var redirectUrl = getRedirect(aReq);
 
-  if (!authedUser) { return aRes.redirect('/'); }
+  if (!authedUser) { return aRes.redirect(redirectUrl); }
 
   User.findOne({ _id: authedUser._id }, function (aErr, aUser) {
     removeSession(aReq, aUser, function () {
-      aRes.redirect('/');
+      aRes.redirect(redirectUrl);
     });
   });
 };

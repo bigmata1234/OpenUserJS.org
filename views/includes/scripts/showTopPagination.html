@@ -1,0 +1,42 @@
+<script type="text/javascript">
+  (function () {
+
+    var events = 'scroll';
+    var handler = null;
+    var didCallback = false;
+
+    var lastScrollTop = 0;
+    var hasScrolledDown = false;
+
+    function callback(aEl) {
+      if (!didCallback) {
+        didCallback = true;
+
+        aEl.collapse('show');
+      }
+    }
+
+    {{> includes/scripts/isElementInViewport.js }}
+
+    function fireIfElementVisible(aEl, aCallback) {
+      return function () {
+        var scrollTop = $(document).scrollTop();
+
+        if (scrollTop > lastScrollTop) {
+          hasScrolledDown = true;
+        } else {
+          if (isElementInViewport(aEl) && hasScrolledDown) {
+            $(window).off(events, handler);
+
+            aCallback(aEl);
+          }
+        }
+        lastScrollTop = scrollTop;
+      }
+    }
+
+    handler = fireIfElementVisible($('.pagination:first').parent(), callback);
+    $(window).on(events, handler);
+
+  })();
+</script>

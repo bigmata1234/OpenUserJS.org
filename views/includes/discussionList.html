@@ -2,15 +2,14 @@
   <table class="table table-hover table-condensed table-striped">
     <thead>
       <tr>
-        <th class="text-center"><a href="?orderBy=topic&orderDir=asc">Topic</a></th>
+        <th class="text-center"><a href="?orderBy=topic&orderDir={{orderDir.topic}}">Topic</a></th>
         {{#multipleCategories}}
         <th class="text-center td-fit">Category</th>
         {{/multipleCategories}}
         <th class="text-center td-fit">Users</th>
-        <th class="text-center td-fit"><a href="?orderBy=comments&orderDir=desc">Replies</a></th>
-        <th class="text-center td-fit">Views</th>
-        <th class="text-center td-fit"><a href="?orderBy=created&orderDir=desc">Created</a></th>
-        <th class="text-center td-fit"><a href="?orderBy=updated&orderDir=desc">Updated</a></th>
+        <th class="text-center td-fit"><a href="?orderBy=comments&orderDir={{orderDir.comments}}">Replies</a></th>
+        <th class="text-center td-fit"><a href="?orderBy=created&orderDir={{orderDir.created}}">Created</a></th>
+        <th class="text-center td-fit"><a href="?orderBy=updated&orderDir={{orderDir.updated}}">Updated</a></th>
       </tr>
     </thead>
     <tbody>
@@ -19,6 +18,9 @@
         <td>
           <b>
             <a href="{{{discussionPageUrl}}}" class="tr-link-a">{{topic}}</a>
+            {{^open}}
+            <span class="label label-danger">Closed</span>
+            {{/open}}
           </b>
         </td>
         {{#multipleCategories}}
@@ -28,20 +30,24 @@
         {{/multipleCategories}}
         <td class="td-fit">
           {{#recentCommentors}}
-          <span class="label label-info">{{name}}</span>
+          <span class="label label-info"><a href="/users/{{{name}}}">{{{name}}}</a></span>
           {{/recentCommentors}}
         </td>
         <td class="text-center td-fit">
           <p>{{replies}}</p>
         </td>
         <td class="text-center td-fit">
-          <p>?</p>
-        </td>
-        <td class="text-center td-fit">
           <time datetime="{{createdISOFormat}}" title="{{created}}">{{createdHumanized}}</time>
         </td>
         <td class="text-center td-fit">
           <time datetime="{{updatedISOFormat}}" title="{{updated}}">{{updatedHumanized}}</time>
+        </td>
+      </tr>
+      {{/discussionList}}
+      {{^discussionList}}
+      <tr class="tr-link">
+        <td colspan="{{#multipleCategories}}6{{/multipleCategories}}{{^multipleCategories}}5{{/multipleCategories}}">
+          <em>{{discussionListIsEmptyMessage}}</em>
         </td>
       </tr>
       {{/discussionList}}

@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var async = require('async');
 var _ = require('underscore');
 
@@ -12,6 +18,7 @@ var cleanFilename = require('../libs/helpers').cleanFilename;
 var execQueryTask = require('../libs/tasks').execQueryTask;
 var statusCodePage = require('../libs/templateHelpers').statusCodePage;
 var pageMetadata = require('../libs/templateHelpers').pageMetadata;
+var orderDir = require('../libs/templateHelpers').orderDir;
 
 var categories = [
   {
@@ -35,6 +42,18 @@ var categories = [
     name: 'General Discussion',
     description: 'Off-topic discussion about anything related to user scripts or OpenUserJS.org'
   },
+  {
+    slug: 'issues',
+    name: 'Issues',
+    description: 'Discussions on scripts',
+    virtual: true
+  },
+  {
+    slug: 'all',
+    name: 'All Discussions',
+    description: 'Overview of all discussions',
+    virtual: true
+  }
 ];
 exports.categories = categories;
 
@@ -53,12 +72,21 @@ exports.categoryListPage = function (aReq, aRes, aNext) {
   // Page metadata
   pageMetadata(options, 'Discussions');
 
+  // Order dir
+  orderDir(aReq, options, 'topic', 'asc');
+  orderDir(aReq, options, 'comments', 'desc');
+  orderDir(aReq, options, 'created', 'desc');
+  orderDir(aReq, options, 'updated', 'desc');
+
   // categoryList
   options.categoryList = _.map(categories, modelParser.parseCategory);
   options.multipleCategories = true;
 
   // discussionListQuery
   var discussionListQuery = Discussion.find();
+
+  // discussionListQuery: remove issues
+  discussionListQuery.and({ issue: { $ne: true } });
 
   // discussionListQuery: Defaults
   modelQuery.applyDiscussionListQueryDefaults(discussionListQuery, options, aReq);
@@ -84,20 +112,7 @@ exports.categoryListPage = function (aReq, aRes, aNext) {
     _.map(options.discussionList, function (aDiscussion) {
       var category = _.findWhere(categories, { slug: aDiscussion.category });
       if (!category) {
-        category = {
-          name: aDiscussion.category,
-          slug: aDiscussion.category,
-        };
-
-        var regex = /^(scripts|libs)\/([^\/]+)(\/[^\/]+)?\/([^\/]+)\/issues$/;
-        var match = regex.exec(category.slug);
-        var isScriptIssue = match;
-        if (isScriptIssue) {
-          var scriptAuthorNameSlug = match[2];
-          var scriptNameSlug = match[4];
-          var scriptName = scriptNameSlug.replace(/\_/g, ' ');
-          category.name = scriptAuthorNameSlug + '/' + scriptName;
-        }
+        category = modelParser.parseCategoryUnknown(aDiscussion.category);
       }
       aDiscussion.category = modelParser.parseCategory(category);
     });
@@ -114,7 +129,7 @@ exports.categoryListPage = function (aReq, aRes, aNext) {
 exports.list = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var categorySlug = aReq.route.params.category;
+  var categorySlug = aReq.params.category;
 
   var category = _.findWhere(categories, { slug: categorySlug });
   if (!category)
@@ -131,16 +146,23 @@ exports.list = function (aReq, aRes, aNext) {
 
   // Category
   category = options.category = modelParser.parseCategory(category);
-  options.canPostTopicToCategory = category.canUserPostTopic(authedUser);
+  options.canPostTopicToCategory = !category.virtual && category.canUserPostTopic(authedUser);
+  options.multipleCategories = category.virtual;
 
   // Page metadata
   pageMetadata(options, [category.name, 'Discussions'], category.description);
+
+  // Order dir
+  orderDir(aReq, options, 'topic', 'asc');
+  orderDir(aReq, options, 'comments', 'desc');
+  orderDir(aReq, options, 'created', 'desc');
+  orderDir(aReq, options, 'updated', 'desc');
 
   // discussionListQuery
   var discussionListQuery = Discussion.find();
 
   // discussionListQuery: category
-  discussionListQuery.find({ category: category.slug });
+  modelQuery.applyDiscussionCategoryFilter(discussionListQuery, options, category.slug);
 
   // discussionListQuery: Defaults
   modelQuery.applyDiscussionListQueryDefaults(discussionListQuery, options, aReq);
@@ -163,6 +185,15 @@ exports.list = function (aReq, aRes, aNext) {
     //--- PreRender
     // discussionList
     options.discussionList = _.map(options.discussionList, modelParser.parseDiscussion);
+    if (category.virtual) {
+      _.map(options.discussionList, function (aDiscussion) {
+        var category = _.findWhere(categories, { slug: aDiscussion.category });
+        if (!category) {
+          category = modelParser.parseCategoryUnknown(aDiscussion.category);
+        }
+        aDiscussion.category = modelParser.parseCategory(category);
+      });
+    }
 
     // Pagination
     options.paginationRendered = pagination.renderDefault(aReq);
@@ -194,8 +225,8 @@ exports.findDiscussion = findDiscussion;
 exports.show = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  var categorySlug = aReq.route.params.category;
-  var topic = aReq.route.params.topic;
+  var categorySlug = aReq.params.category;
+  var topic = aReq.params.topic;
 
   var category = _.findWhere(categories, { slug: categorySlug });
   if (!category)
@@ -267,10 +298,7 @@ exports.show = function (aReq, aRes, aNext) {
 exports.newTopic = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  if (!authedUser)
-    return aRes.redirect('/login');
-
-  var categorySlug = aReq.route.params.category;
+  var categorySlug = aReq.params.category;
 
   var category = _.findWhere(categories, { slug: categorySlug });
   if (!category)
@@ -334,9 +362,11 @@ function postTopic(aUser, aCategory, aTopic, aContent, aIssue, aCallback) {
   var params = { sort: {} };
   params.sort.duplicateId = -1;
 
-  if (!urlTopic) { aCallback(null); }
+  if (!urlTopic) {
+    aCallback(null);
+  }
 
-  Discussion.findOne({ path: path }, params, function (aErr, aDiscussion) {
+  Discussion.findOne({ path: path }, null, params, function (aErr, aDiscussion) {
     var newDiscussion = null;
     var props = {
       topic: aTopic,
@@ -381,16 +411,14 @@ exports.postTopic = postTopic;
 exports.createTopic = function (aReq, aRes, aNext) {
   var authedUser = aReq.session.user;
 
-  if (!authedUser)
-    return aRes.redirect('/login');
-
-  var categorySlug = aReq.route.params.category;
+  var categorySlug = aReq.params.category;
   var topic = aReq.body['discussion-topic'];
   var content = aReq.body['comment-content'];
 
   var category = _.findWhere(categories, { slug: categorySlug });
-  if (!category)
+  if (!category) {
     return aNext();
+  }
 
   //
   var options = {};
@@ -403,7 +431,14 @@ exports.createTopic = function (aReq, aRes, aNext) {
   if (!category.canUserPostTopic(authedUser)) {
     return statusCodePage(aReq, aRes, aNext, {
       statusCode: 403,
-      statusMessage: 'You cannot post a topic to this category',
+      statusMessage: 'You cannot post a topic to this category'
+    });
+  }
+
+  if ((!topic || !topic.trim()) || (!content || !content.trim())) {
+    return statusCodePage(aReq, aRes, aNext, {
+      statusCode: 403,
+      statusMessage: 'You cannot post an empty discussion topic to this category'
     });
   }
 
@@ -417,20 +452,30 @@ exports.createTopic = function (aReq, aRes, aNext) {
 
 // post route to create a new comment on an existing discussion
 exports.createComment = function (aReq, aRes, aNext) {
-  var category = aReq.route.params.category;
-  var topic = aReq.route.params.topic;
-  var user = aReq.session.user;
+  var category = aReq.params.category;
+  var topic = aReq.params.topic;
+  var authedUser = aReq.session.user;
   var content = aReq.body['comment-content'];
-  var commentId = aReq.body['comment-id']; // for editing
 
-  if (!user) { return aNext(); }
+  if (!authedUser) {
+    return aNext();
+  }
 
-  findDiscussion(category, topic, function (discussion) {
-    if (!discussion) { return aNext(); }
+  findDiscussion(category, topic, function (aDiscussion) {
+    if (!aDiscussion) {
+      return aNext();
+    }
 
-    postComment(user, discussion, content, false, function (err, discussion) {
-      aRes.redirect(encodeURI(discussion.path
-        + (discussion.duplicateId ? '_' + discussion.duplicateId : '')));
+    if (!content || !content.trim()) {
+      return statusCodePage(aReq, aRes, aNext, {
+        statusCode: 403,
+        statusMessage: 'You cannot post an empty comment to this discussion'
+      });
+    }
+
+    postComment(authedUser, aDiscussion, content, false, function (aErr, aDiscussion) {
+      aRes.redirect(encodeURI(aDiscussion.path
+        + (aDiscussion.duplicateId ? '_' + aDiscussion.duplicateId : '')));
     });
   });
 };

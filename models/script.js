@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
 
@@ -7,7 +13,8 @@ var scriptSchema = new Schema({
   // Visible
   name: String,
   author: String,
-  installs: Number,
+  installs: { type: Number, default: 0 },
+  installsSinceUpdate: { type: Number, default: 0 },
   rating: Number,
   about: String,
   updated: Date,

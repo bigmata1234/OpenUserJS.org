@@ -10,9 +10,10 @@
     <div class="row">
       <div class="col-sm-12">
         <h2 class="page-heading">
-          Discuss
+          Discussions
         </h2>
-        <div class="list-group">
+        <div class="list-group col-sm-12 col-md-2 col-lg-3">
+          <h3>Categories</h3>
           {{#categoryList}}
           <a href="{{{categoryPageUrl}}}" class="list-group-item">
             <h4 class="list-group-item-heading">{{name}}</h4>
@@ -20,16 +21,28 @@
           </a>
           {{/categoryList}}
         </div>
-        <div class="panel panel-default">
-          {{> includes/discussionList.html }}
-        </div>
-        <div class="text-center">
-          {{{paginationRendered}}}
+        <div class="panel-group col-sm-offset-0 col-md-offset-2 col-lg-offset-3">
+          {{#paginationRendered}}
+          <div class="text-center collapse">
+            {{{paginationRendered}}}
+          </div>
+          {{/paginationRendered}}
+          <div class="panel panel-default col-sm-12 col-md-12 col-lg-12">
+            {{> includes/discussionList.html }}
+          </div>
+          {{#paginationRendered}}
+          <div class="text-center">
+            {{{paginationRendered}}}
+          </div>
+          {{/paginationRendered}}
         </div>
       </div>
     </div>
   </div>
   {{> includes/footer.html }}
+  {{#paginationRendered}}
+    {{> includes/scripts/showTopPagination.html }}
+  {{/paginationRendered}}
   {{> includes/scripts/tableTrLinkScript.html }}
 </body>
 </html>

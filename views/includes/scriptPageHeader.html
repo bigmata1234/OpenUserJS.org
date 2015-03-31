@@ -1,4 +1,5 @@
 <h2 class="page-heading">
+  {{#isScriptPage}}
   <a href="{{{script.scriptInstallPageUrl}}}" class="btn btn-info pull-right">
     {{#script.isLib}}
     <i class="fa fa-file-text-o"></i> Raw Source
@@ -7,8 +8,11 @@
     <i class="fa fa-download"></i> Install
     {{/script.isLib}}
   </a>
+  {{/isScriptPage}}
   {{#script.icon45Url}}
-  <span class="page-heading-icon"><img src="{{{script.icon45Url}}}" alt="" /></span>
+  <span class="page-heading-icon" {{#script.icon45Url}}data-icon-src="{{{script.icon45Url}}}"{{/script.icon45Url}}>
+    {{#script.isLib}}<i class="fa fa-fw fa-file-excel-o"></i>{{/script.isLib}}{{^script.isLib}}<i class="fa fa-fw fa-file-code-o"></i>{{/script.isLib}}
+  </span>
   {{/script.icon45Url}}
   <a href="{{{script.author.userPageUrl}}}" class="script-author">{{script.author.name}}</a>
   <span class="path-divider">/</span>
@@ -17,8 +21,8 @@
 <nav class="navbar navbar-default navbar-static-top" role="navigation">
   <div class="navbar-header">
     <button type="button" data-toggle="collapse" data-target="#content-navbar" class="navbar-toggle"><i class="fa fa-bars"></i></button>
-    <div class="navbar-brand visible-xs"></div> {{! Cheating at padding. }}
-    <p class="navbar-text visible-xs"><i class="fa fa-fw fa-signal"></i> <b>Installs:</b> {{script.installs}}</p>
+    <div class="navbar-brand visible-xs-block"></div> {{! Cheating at padding. }}
+    <p class="navbar-text visible-xs-block"><i class="fa fa-fw fa-signal"></i> <b>Installs:</b> {{script.installs}}</p>
   </div>
   <div class="navbar-collapse collapse in" id="content-navbar">
     <ul class="nav navbar-nav">
@@ -26,6 +30,8 @@
       <li class="{{#isScriptViewSourcePage}}active{{/isScriptViewSourcePage}}"><a href="{{{script.scriptViewSourcePageUrl}}}" class="{{^script.scriptViewSourcePageUrl}}disabled{{/script.scriptViewSourcePageUrl}}">Source Code</a></li>
       <li class="{{#isScriptIssuesPage}}active{{/isScriptIssuesPage}}"><a href="{{{script.scriptIssuesPageUrl}}}" class="{{^script.scriptIssuesPageUrl}}disabled{{/script.scriptIssuesPageUrl}}">Issues <span class="badge">{{issueCount}}</span></a></li>
     </ul>
+    {{^script.isLib}}
     <p class="navbar-text pull-right hidden-xs"><i class="fa fa-fw fa-signal"></i> <b>Installs:</b> {{script.installs}}</p>
+    {{/script.isLib}}
   </div>
 </nav>

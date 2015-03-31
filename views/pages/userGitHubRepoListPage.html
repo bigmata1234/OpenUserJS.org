@@ -11,21 +11,31 @@
     <div class="row">
       <div class="col-md-8">
         <h2><a href="{{{userGitHubRepoListPageUrl}}}" class="script-author">{{githubUser.login}}</a></h2>
+        {{#paginationRendered}}
+        <div class="text-center collapse">
+          {{{paginationRendered}}}
+        </div>
+        {{/paginationRendered}}
         <div class="list-group">
           {{#githubRepoList}}
           <a href="{{{userGitHubRepoPageUrl}}}" class="list-group-item">
-            <h4 class="list-group-item-heading">{{full_name}}</h4>
+            <h4 class="list-group-item-heading"><i class="octicon octicon-fw octicon-repo"></i> {{full_name}}</h4>
           </a>
           {{/githubRepoList}}
         </div>
+        {{#paginationRendered}}
         <div class="text-center">
           {{{paginationRendered}}}
         </div>
+        {{/paginationRendered}}
       </div>
       <div class="col-md-4">
       </div>
     </div>
   </div>
   {{> includes/footer.html }}
+  {{#paginationRendered}}
+    {{> includes/scripts/showTopPagination.html }}
+  {{/paginationRendered}}
 </body>
 </html>

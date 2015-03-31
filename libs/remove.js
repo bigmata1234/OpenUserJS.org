@@ -1,5 +1,11 @@
 'use strict';
 
+// Define some pseudo module globals
+var isPro = require('../libs/debug').isPro;
+var isDev = require('../libs/debug').isDev;
+var isDbg = require('../libs/debug').isDbg;
+
+//
 var Remove = require('../models/remove').Remove;
 var User = require('../models/user').User;
 var async = require('async');
@@ -44,7 +50,7 @@ function removeable(aModel, aContent, aUser, aCallback) {
 exports.removeable = removeable;
 
 function remove(aModel, aContent, aUser, aReason, aCallback) {
-  var remove = new Remove({
+  var removeModel = new Remove({
     'model': aModel.modelName,
     'content': aContent.toObject(),
     'removed': new Date(),
@@ -54,7 +60,7 @@ function remove(aModel, aContent, aUser, aReason, aCallback) {
     '_removerId': aUser._id
   });
 
-  remove.save(function (aErr, aRemove) {
+  removeModel.save(function (aErr, aRemove) {
     aContent.remove(function (aErr) { aCallback(aRemove); });
   });
 }
@@ -72,7 +78,7 @@ exports.remove = function (aModel, aContent, aUser, aReason, aCallback) {
         model.find({ _authorId: aContent._id },
           function (aErr, aContentArr) {
             async.each(aContentArr, function (aContent, innerCb) {
-              remove(model, aContent, aUser, null, innerCb);
+              remove(model, aContent, aUser, 'User removed', innerCb);
             }, aCallback);
           });
       }, function () {
@@ -106,7 +112,7 @@ exports.findDeadorAlive = function (aModel, aQuery, aUser, aCallback) {
     var rmQuery = { model: modelName };
 
     if (!aErr && aContent) { return aCallback(true, aContent, null); }
-    if (modelName != 'User' && -1 === modelNames.indexOf(modelName)) {
+    if (modelName !== 'User' && -1 === modelNames.indexOf(modelName)) {
       return aCallback(null, null, null);
     }
 
@@ -120,7 +126,7 @@ exports.findDeadorAlive = function (aModel, aQuery, aUser, aCallback) {
         return aCallback(false, null, aRemoved);
       }
 
-      aCallback(false, new model(aRemoved.content), aRemoved); // TODO: Ambiguous
+      aCallback(false, new aModel(aRemoved.content), aRemoved);
     });
   });
 };
